@@ -3,6 +3,8 @@ NAME		=	Pestilence
 SRCS		= 	\
 				main.s
 
+INCLUDES	=	includes/
+
 _OBJS		=	${SRCS:.s=.o}
 OBJS		=	$(addprefix build/, $(_OBJS))
 
@@ -17,7 +19,7 @@ build/%.o	:	srcs/%.s
 	@if [ ! -d $(dir $@) ]; then\
 		mkdir -p $(dir $@);\
 	fi
-	$(NASM) ${NFLAGS} $< -o $@
+	$(NASM) ${NFLAGS} -I ${INCLUDES} $< -o $@
 
 $(NAME)	:	$(OBJS)
 	$(LD) $(OBJS) -o $(NAME)
