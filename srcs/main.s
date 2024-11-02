@@ -660,8 +660,6 @@ convert_pt_note_to_load:
 section .data
 	infected_folder_1: db "/tmp/test/", 0
 	infected_folder_2: db "/tmp/test2/", 0
-	err_msg: db "Error occured !", 10
-	len_err_msg: equ $ - err_msg
 	elf_64_magic: db 0x7F, "ELF", 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 	len_elf_64_magic: equ $ - elf_64_magic
 	; never used but here to be copied in the binary
