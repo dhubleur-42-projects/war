@@ -1,4 +1,4 @@
-NAME		=	Famine
+NAME		=	Pestilence
 
 SRCS		= 	\
 				main.s
