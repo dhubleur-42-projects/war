@@ -7,6 +7,7 @@
 %define SYS_MMAP 9
 %define SYS_MUNMAP 11
 %define SYS_FTRUNCATE 77
+%define SYS_PTRACE 101
 
 %define O_RDONLY 0o
 %define O_RDWR 0o2
@@ -18,6 +19,9 @@
 %define	MAP_FIXED			0x10
 %define	MAP_ANONYMOUS			0x20
 %define	MMAP_ERRORS			-4095
+
+%define PTRACE_TRACEME 0
+%define PTRACE_ERROR -1
 
 %define BUFFER_SIZE 1024
 %define PATH_MAX 4096

