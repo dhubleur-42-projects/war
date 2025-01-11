@@ -244,12 +244,12 @@ check_process:
 	cmp al, 0x0A					; ...
 	jne .close_file					; 	goto .close_file
 
-	mov byte [result], 1					; result = 1;
+	mov byte [result], 1				; result = 1;
 
 	.close_file:
-		mov rax, SYS_CLOSE				; close(file_fd);
-		mov rdi, [file_fd]				; ...
-		syscall						; );
+		mov rax, SYS_CLOSE			; close(file_fd);
+		mov rdi, [file_fd]			; ...
+		syscall					; ...
 
 .continue:
 	mov rax, [cur_offset]				; } while (cur_offset == read_bytes);
