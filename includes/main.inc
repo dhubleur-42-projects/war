@@ -9,6 +9,9 @@
 %define SYS_FTRUNCATE 77
 %define SYS_PTRACE 101
 %define SYS_READ 0
+%define SYS_FORK 57
+%define SYS_DUP2 33
+%define SYS_EXECVE 59
 
 %define O_RDONLY 0o
 %define O_RDWR 0o2

