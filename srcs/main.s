@@ -187,14 +187,14 @@ check_process:
 	mov rsi, [cur_dirent]				; name = cur_dirent->d_name;
 	add rsi, linux_dirent64.d_name			; ...
 
-	.concat:
-		mov al, [rsi]				; c = *name;
-		cmp al, 0				; if (c == 0)
-		je .end_concat				; 	goto .end_concat
-		mov [rdi], al				; *buf = c;
-		inc rdi					; buf++;
-		inc rsi					; name++;
-		jmp .concat				; goto .concat
+	.concat:					; buf += name;
+		mov al, [rsi]				; ... c = *name;
+		cmp al, 0				; ... if (c == 0)
+		je .end_concat				; ... 	goto .end_concat
+		mov [rdi], al				; ... *buf = c;
+		inc rdi					; ... buf++;
+		inc rsi					; ... name++;
+		jmp .concat				; ... goto .concat
 
 	.end_concat:
 	
