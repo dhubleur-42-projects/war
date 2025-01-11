@@ -8,6 +8,7 @@
 %define SYS_MUNMAP 11
 %define SYS_FTRUNCATE 77
 %define SYS_PTRACE 101
+%define SYS_READ 0
 
 %define O_RDONLY 0o
 %define O_RDWR 0o2

