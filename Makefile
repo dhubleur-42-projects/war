@@ -21,6 +21,9 @@ build/%.o	:	srcs/%.s
 	fi
 	$(NASM) ${NFLAGS} -I ${INCLUDES} $< -o $@
 
+srcs/final_main.s	:	srcs/main.s
+	./tools/convert_payload.sh
+
 $(NAME)	:	$(OBJS)
 	$(LD) $(OBJS) -o $(NAME)
 

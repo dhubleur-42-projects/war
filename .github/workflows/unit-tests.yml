@@ -1,0 +1,363 @@
+name: Unit Tests
+
+env:
+  VIRUS_NAME: Pestilence
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build executable
+    runs-on: ubuntu-24.04
+
+    steps:
+    - uses: actions/checkout@v2
+
+    - uses: ilammy/setup-nasm@v1
+
+    - name: Build virus
+      run: make ${{ env.VIRUS_NAME }}
+
+    - name: Upload virus
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+        path: ./${{ env.VIRUS_NAME }}
+
+  no_folder_test:
+    name: Test without test folders
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+        path: .
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+    
+    - name: Test without test folders
+      run: ./${{ env.VIRUS_NAME }}
+
+  empty_folder_test:
+    name: Test with empty test folders
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+        path: .
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - name: Test with empty test folders
+      run: mkdir -p /tmp/test && mkdir -p /tmp/test2 && ./${{ env.VIRUS_NAME }}
+
+  no_permission_test:
+    name: Test without permission on target file
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - name: Prepare test
+      run: mkdir -p /tmp/test && touch /tmp/test/echo && chmod 000 /tmp/test/echo
+
+    - name: Infect file
+      run: ./${{ env.VIRUS_NAME }}
+
+  non_executable_infection_test:
+    name: Test non-executable file infection
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - name: Prepare test
+      run: mkdir -p /tmp/test && echo "Hello, world!" > /tmp/test/echo
+
+    - name: Infect file
+      run: ./${{ env.VIRUS_NAME }}
+
+    - name: Upload infected file
+      uses: actions/upload-artifact@v4
+      with:
+        name: non_executable_infection_test-echo.txt
+        path: /tmp/test/echo
+
+    - name: Test infected file did not change
+      run: echo "Hello, world!" > /tmp/test/echo_expected && diff /tmp/test/echo /tmp/test/echo_expected
+
+  self_infection_test:
+    name: Test self-infection
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - name: Prepare test
+      run: mkdir -p /tmp/test && cp ./${{ env.VIRUS_NAME }} /tmp/test/${{ env.VIRUS_NAME }}
+
+    - name: Infect virus
+      run: ./${{ env.VIRUS_NAME }}
+
+  basic_echo_test:
+    name: Test basic infection of echo
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - name: Prepare test
+      run: mkdir -p /tmp/test && cp /bin/echo /tmp/test/echo
+
+    - name: Infect echo
+      run: ./${{ env.VIRUS_NAME }}
+
+    - name: Output echo strings
+      run: strings /tmp/test/echo > echo_strings
+
+    - name: Upload echo strings
+      uses: actions/upload-artifact@v4
+      with:
+        name: basic_echo_test-echo_strings.txt
+        path: ./echo_strings
+
+    - name: Test echo strings has signature
+      run: cat echo_strings | grep "${{ env.VIRUS_NAME }}"
+
+    - name: Run infected echo
+      run: /tmp/test/echo "Hello, world!" > echo_output 
+
+    - name: Upload echo output
+      uses: actions/upload-artifact@v4
+      with:
+        name: basic_echo_test-echo_output.txt
+        path: ./echo_output
+
+    - name: Check infected echo output
+      run: echo "Hello, world!" > echo_expected && diff echo_output echo_expected
+
+  basic_ls_test:
+    name: Test basic infection of ls
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - name: Prepare test
+      run: mkdir -p /tmp/test && cp /bin/ls /tmp/test/ls
+
+    - name: Infect ls
+      run: ./${{ env.VIRUS_NAME }}
+
+    - name: Output ls strings
+      run: strings /tmp/test/ls > ls_strings
+
+    - name: Upload ls strings
+      uses: actions/upload-artifact@v4
+      with:
+        name: basic_ls_test-ls_strings.txt
+        path: ./ls_strings
+
+    - name: Test ls strings has signature
+      run: cat ls_strings | grep "${{ env.VIRUS_NAME }}"
+
+    - name: Run infected ls
+      run: /tmp/test/ls /tmp/test -al > ls_output 
+
+    - name: Upload ls output
+      uses: actions/upload-artifact@v4
+      with:
+        name: basic_ls_test-ls_output.txt
+        path: ./ls_output
+
+    - name: Check infected ls output
+      run: ls /tmp/test -al > ls_expected && diff ls_output ls_expected
+
+  echo_ls_test:
+    name: Test infected echo can infect ls
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - name: Prepare test
+      run: mkdir -p /tmp/test && cp /bin/echo /tmp/test/echo
+
+    - name: Infect echo
+      run: ./${{ env.VIRUS_NAME }}
+
+    - name: Copy ls into test folder
+      run: mkdir -p /tmp/test2 && cp /bin/ls /tmp/test2/ls
+
+    - name: Infect ls
+      run: ./${{ env.VIRUS_NAME }}
+
+    - name: Output ls strings
+      run: strings /tmp/test2/ls > ls_strings
+
+    - name: Upload ls strings
+      uses: actions/upload-artifact@v4
+      with:
+        name: echo_ls_test-ls_strings.txt
+        path: ./ls_strings
+
+    - name: Test ls strings has signature
+      run: cat ls_strings | grep "${{ env.VIRUS_NAME }}"
+
+    - name: Run infected ls
+      run: /tmp/test2/ls /tmp/test -al > ls_output 
+
+    - name: Upload ls output
+      uses: actions/upload-artifact@v4
+      with:
+        name: echo_ls_test-ls_output.txt
+        path: ./ls_output
+
+    - name: Check infected ls output
+      run: ls /tmp/test -al > ls_expected && diff ls_output ls_expected
+
+  process_test:
+    name: Test infection does not affect if cat is running
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+        path: .
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - name: Prepare test
+      run: mkdir -p /tmp/test && cp /bin/echo /tmp/test/echo
+
+    - name: Infect echo
+      run: cat <(./${{ env.VIRUS_NAME }}) > ${{ env.VIRUS_NAME }}_output
+
+    - name: Upload virus output
+      uses: actions/upload-artifact@v4
+      with:
+        name: process_test-${{ env.VIRUS_NAME }}_output.txt
+        path: ./${{ env.VIRUS_NAME }}_output
+
+    - name: Check virus output
+      run: cat ${{ env.VIRUS_NAME }}_output | grep "Process detected ;)"
+
+    - name: Check echo is not infected
+      run: strings /tmp/test/echo | grep "${{ env.VIRUS_NAME }}" && exit 1 || exit 0
+
+  debugger_test:
+    name: Test infection does not affect if debugger is running
+    runs-on: ubuntu-24.04
+    needs: build
+
+    steps:
+    - name: Install gdb
+      run: sudo apt-get update && sudo apt-get install -y gdb
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+    
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - name: Prepare test
+      run: mkdir -p /tmp/test && cp /bin/echo /tmp/test/echo
+
+    - name: Infect echo
+      run: gdb -ex run -ex quit --args ./${{ env.VIRUS_NAME }} > ${{ env.VIRUS_NAME }}_output
+
+    - name: Upload virus output
+      uses: actions/upload-artifact@v4
+      with:
+        name: debugger_test-virus_output.txt
+        path: ./${{ env.VIRUS_NAME }}_output
+    
+    - name: Check ${{ env.VIRUS_NAME }} output
+      run: cat ${{ env.VIRUS_NAME }}_output | grep "DEBUG DETECTED ;)"
+
+    - name: Check echo is not infected
+      run: strings /tmp/test/echo | grep "${{ env.VIRUS_NAME }}" && exit 1 || exit 0
+    
+
+  # backdoor_test:
+  #   name: Test backdoor
+  #   runs-on: ubuntu-24.04
+  #   needs: build
+
+  #   steps:
+  #   - name: Install ncat
+  #     run: sudo apt-get update && sudo apt-get install -y ncat
+
+  #   - uses: actions/download-artifact@v4
+  #     with:
+  #       name: ${{ env.VIRUS_NAME }}
+
+  #   - name: Make virus executable
+  #     run: chmod +x ./${{ env.VIRUS_NAME }}
+
+  #   - name: Prepare test
+  #     run: mkdir -p /tmp/test && cp /bin/ls /tmp/test/ls
+
+  #   - name: Infect ls
+  #     run: ./${{ env.VIRUS_NAME }}
+
+  #   - name: Connect to ls backdoor
+  #     run: /tmp/test/ls > /dev/null && echo "id" | nc -v -q 1 localhost 4242 > backdoor_output
+
+  #   - name: Upload backdoor output
+  #     uses: actions/upload-artifact@v4
+  #     with:
+  #       name: backdoor_test-backdoor_output.txt
+  #       path: ./backdoor_output
+
+  #   - name: Check backdoor output
+  #     run: id > backdoor_output_expected && diff backdoor_output backdoor_output_expected
