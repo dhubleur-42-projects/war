@@ -1,7 +1,7 @@
 NAME		=	Pestilence
 
 SRCS		= 	\
-				main.s
+				final_main.s
 
 INCLUDES	=	includes/
 
