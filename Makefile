@@ -9,7 +9,7 @@ _OBJS		=	${SRCS:.s=.o}
 OBJS		=	$(addprefix build/, $(_OBJS))
 
 NASM		=	nasm
-NFLAGS		=	-felf64 -g
+NFLAGS		=	-felf64
 
 LD			=	ld
 
