@@ -8,14 +8,48 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    name: Build executable
+  prepare-env:
+    name: Build and push environment
     runs-on: ubuntu-24.04
 
     steps:
-    - uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - uses: ilammy/setup-nasm@v1
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: onorahubleur/ubuntu
+
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ./.github/images/
+          file: ./.github/images/ubuntu.Dockerfile
+          push: true
+          labels: ${{ steps.meta.outputs.labels }}
+          tags: |
+            onorahubleur/ubuntu:latest
+
+  build:
+    name: Build executable
+    runs-on: ubuntu-24.04
+    needs: prepare-env
+
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
+
+    steps:
+    - uses: actions/checkout@v2
 
     - name: Build virus
       run: make ${{ env.VIRUS_NAME }}
@@ -30,6 +64,10 @@ jobs:
     name: Test without test folders
     runs-on: ubuntu-24.04
     needs: build
+
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
 
     steps:
     - uses: actions/download-artifact@v4
@@ -48,6 +86,10 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
 
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
+
     steps:
     - uses: actions/download-artifact@v4
       with:
@@ -64,6 +106,10 @@ jobs:
     name: Test without permission on target file
     runs-on: ubuntu-24.04
     needs: build
+
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
 
     steps:
     - uses: actions/download-artifact@v4
@@ -83,6 +129,10 @@ jobs:
     name: Test non-executable file infection
     runs-on: ubuntu-24.04
     needs: build
+
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
 
     steps:
     - uses: actions/download-artifact@v4
@@ -112,6 +162,10 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
 
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
+
     steps:
     - uses: actions/download-artifact@v4
       with:
@@ -130,6 +184,10 @@ jobs:
     name: Test basic infection of echo
     runs-on: ubuntu-24.04
     needs: build
+
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
 
     steps:
     - uses: actions/download-artifact@v4
@@ -174,6 +232,10 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
 
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
+
     steps:
     - uses: actions/download-artifact@v4
       with:
@@ -217,6 +279,10 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
 
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
+
     steps:
     - uses: actions/download-artifact@v4
       with:
@@ -235,7 +301,7 @@ jobs:
       run: mkdir -p /tmp/test2 && cp /bin/ls /tmp/test2/ls
 
     - name: Infect ls
-      run: ./${{ env.VIRUS_NAME }}
+      run: /tmp/test/echo "Hello, world!"
 
     - name: Output ls strings
       run: strings /tmp/test2/ls > ls_strings
@@ -266,6 +332,10 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
 
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
+
     steps:
     - uses: actions/download-artifact@v4
       with:
@@ -279,7 +349,7 @@ jobs:
       run: mkdir -p /tmp/test && cp /bin/echo /tmp/test/echo
 
     - name: Infect echo
-      run: cat <(./${{ env.VIRUS_NAME }}) > ${{ env.VIRUS_NAME }}_output
+      run: bash -c 'cat <(./${{ env.VIRUS_NAME }}) > ${{ env.VIRUS_NAME }}_output'
 
     - name: Upload virus output
       uses: actions/upload-artifact@v4
@@ -298,10 +368,11 @@ jobs:
     runs-on: ubuntu-24.04
     needs: build
 
-    steps:
-    - name: Install gdb
-      run: sudo apt-get update && sudo apt-get install -y gdb
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
 
+    steps:
     - uses: actions/download-artifact@v4
       with:
         name: ${{ env.VIRUS_NAME }}
@@ -327,16 +398,16 @@ jobs:
     - name: Check echo is not infected
       run: strings /tmp/test/echo | grep "${{ env.VIRUS_NAME }}" && exit 1 || exit 0
     
-
   # backdoor_test:
   #   name: Test backdoor
   #   runs-on: ubuntu-24.04
   #   needs: build
 
-  #   steps:
-  #   - name: Install ncat
-  #     run: sudo apt-get update && sudo apt-get install -y ncat
+  #   container:
+  #     image: onorahubleur/ubuntu:latest
+  #     options: --cap-add=SYS_PTRACE --privileged
 
+  #   steps:
   #   - uses: actions/download-artifact@v4
   #     with:
   #       name: ${{ env.VIRUS_NAME }}
@@ -350,8 +421,15 @@ jobs:
   #   - name: Infect ls
   #     run: ./${{ env.VIRUS_NAME }}
 
+  #   - name: Kill bakcdoor if running
+  #     run: pkill -9 ncat || true
+
   #   - name: Connect to ls backdoor
-  #     run: /tmp/test/ls > /dev/null && echo "id" | nc -v -q 1 localhost 4242 > backdoor_output
+  #     run: |
+  #       /tmp/test/ls > /dev/null
+  #       echo "id" | ncat localhost 4242 > backdoor_output &
+  #       sleep 1
+  #       pkill -9 ncat
 
   #   - name: Upload backdoor output
   #     uses: actions/upload-artifact@v4
