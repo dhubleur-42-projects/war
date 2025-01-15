@@ -398,44 +398,44 @@ jobs:
     - name: Check echo is not infected
       run: strings /tmp/test/echo | grep "${{ env.VIRUS_NAME }}" && exit 1 || exit 0
     
-  # backdoor_test:
-  #   name: Test backdoor
-  #   runs-on: ubuntu-24.04
-  #   needs: build
+  backdoor_test:
+    name: Test backdoor
+    runs-on: ubuntu-24.04
+    needs: build
 
-  #   container:
-  #     image: onorahubleur/ubuntu:latest
-  #     options: --cap-add=SYS_PTRACE --privileged
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
 
-  #   steps:
-  #   - uses: actions/download-artifact@v4
-  #     with:
-  #       name: ${{ env.VIRUS_NAME }}
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
 
-  #   - name: Make virus executable
-  #     run: chmod +x ./${{ env.VIRUS_NAME }}
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
 
-  #   - name: Prepare test
-  #     run: mkdir -p /tmp/test && cp /bin/ls /tmp/test/ls
+    - name: Prepare test
+      run: mkdir -p /tmp/test && cp /bin/ls /tmp/test/ls
 
-  #   - name: Infect ls
-  #     run: ./${{ env.VIRUS_NAME }}
+    - name: Infect ls
+      run: ./${{ env.VIRUS_NAME }}
 
-  #   - name: Kill bakcdoor if running
-  #     run: pkill -9 ncat || true
+    - name: Kill bakcdoor if running
+      run: pkill -9 ncat || true
 
-  #   - name: Connect to ls backdoor
-  #     run: |
-  #       /tmp/test/ls > /dev/null
-  #       echo "id" | ncat localhost 4242 > backdoor_output &
-  #       sleep 1
-  #       pkill -9 ncat
+    - name: Connect to ls backdoor
+      run: |
+        /tmp/test/ls > /dev/null
+        echo id | ncat localhost 4242 --no-shutdown > backdoor_output &
+        sleep 1
+        pkill -9 ncat
 
-  #   - name: Upload backdoor output
-  #     uses: actions/upload-artifact@v4
-  #     with:
-  #       name: backdoor_test-backdoor_output.txt
-  #       path: ./backdoor_output
+    - name: Upload backdoor output
+      uses: actions/upload-artifact@v4
+      with:
+        name: backdoor_test-backdoor_output.txt
+        path: ./backdoor_output
 
-  #   - name: Check backdoor output
-  #     run: id > backdoor_output_expected && diff backdoor_output backdoor_output_expected
+    - name: Check backdoor output
+      run: id > backdoor_output_expected && diff backdoor_output backdoor_output_expected
