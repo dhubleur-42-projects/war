@@ -60,6 +60,12 @@ jobs:
         name: ${{ env.VIRUS_NAME }}
         path: ./${{ env.VIRUS_NAME }}
 
+    - name: Upload remove_anti_debug
+      uses: actions/upload-artifact@v4
+      with:
+        name: remove_anti_debug.py
+        path: ./tools/remove_anti_debug.py
+
   no_folder_test:
     name: Test without test folders
     runs-on: ubuntu-24.04
@@ -439,3 +445,36 @@ jobs:
 
     - name: Check backdoor output
       run: id > backdoor_output_expected && diff backdoor_output backdoor_output_expected
+
+  intrication_test:
+    name: Test intrication of anti-debug and decipher
+    runs-on: ubuntu-24.04
+    needs: build
+
+    container:
+      image: onorahubleur/ubuntu:latest
+      options: --cap-add=SYS_PTRACE --privileged
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.VIRUS_NAME }}
+
+    - name: Make virus executable
+      run: chmod +x ./${{ env.VIRUS_NAME }}
+
+    - uses: actions/download-artifact@v4
+      with:
+        name: remove_anti_debug.py
+
+    - name: Prepare test
+      run: mkdir -p /tmp/test && cp /bin/ls /tmp/test/ls
+
+    - name: Infect ls
+      run: ./${{ env.VIRUS_NAME }}
+
+    - name: Run remove_anti_debug
+      run: python3 remove_anti_debug.py /tmp/test/ls
+
+    - name: Execute ls
+      run: /tmp/test/ls && exit 1 || exit 0
