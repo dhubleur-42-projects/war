@@ -105,4 +105,4 @@ endstruc
 
 ; Compression
 %define COMPRESSION_TOKEN 127
-%define COMPRESSION_BUF_SIZE 10000 ; TODO Replace it with something lower at the end (nearest of the real compression size.)
+%define COMPRESSION_BUF_SIZE 2000
