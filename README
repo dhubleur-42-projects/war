@@ -1,0 +1,7 @@
+---- Warning Incoherence inside Subject -----
+There is an incoherence inside the subject. Page 12, the subjet says "Your program will not display
+anything on the standard or error outputs." but page 16, we get an example of a printed message.
+
+We also print a message for process detection.
+
+To print no messages at all, remove the 2 instructions "syscall" inside "print_string" function.
