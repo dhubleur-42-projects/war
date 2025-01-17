@@ -1252,8 +1252,6 @@ convert_pt_note_to_load:
 
 _end:
 
-; TODO Create label "outside children/infected" or something like that
-
 ; void compression(long *compressed_data_size_ptr, uint8_t *compressed_data_ptr);
 ; void compression(rdi compressed_data_size_ptr, rsi compressed_data_ptr);
 compression:
@@ -1354,7 +1352,6 @@ compression:
 	jmp .write_byte				; ...
 
 .write_token:					; {
-	; TODO Fix size of variables, play with byte/qword, it is ugly
 	mov rax, [dest_end_ptr]			; 	_cur_dest_ptr = dest_end_ptr;
 	sub rax, [i_dest]			; 	_cur_dest_ptr -= i_dest;
 	mov byte [rax], COMPRESSION_TOKEN	; 	*_cur_dest_ptr = COMPRESSION_TOKEN;
