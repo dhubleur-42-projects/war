@@ -1,5 +1,5 @@
-NAME		=	Pestilence
-TMP_NAME	=	build/Pestilence.tmp
+NAME		=	War
+TMP_NAME	=	build/War.tmp
 
 SRCS		= 	\
 				final_main.s

