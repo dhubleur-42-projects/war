@@ -13,7 +13,6 @@ NASM		=	nasm
 NFLAGS		=	-felf64 -g
 
 LD			=	ld
-LD_FLAGS	=	-T linker.ld
 
 EMPTY_PROGRAM	=	build/empty_program
 EMPTY_SRC		=	srcs/empty.c
@@ -36,7 +35,7 @@ srcs/final_main.s	:	srcs/main.s
 	./tools/convert_payload.sh
 
 $(TMP_NAME)	:	$(OBJS)
-	$(LD) $(LD_FLAGS) $(OBJS) -o $(TMP_NAME)
+	$(LD) $(OBJS) -o $(TMP_NAME)
 
 $(NAME): $(TMP_NAME) $(EMPTY_PROGRAM)
 	mkdir -p /tmp/test

