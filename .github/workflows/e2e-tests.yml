@@ -374,35 +374,35 @@ jobs:
     - name: Infect pwd
       run: /tmp/test/whoami
 
-    - name: Copy cat into test folder
-      run: cp /bin/cat /tmp/test2/cat
+    - name: Copy hostname into test folder
+      run: cp /bin/hostname /tmp/test2/hostname
 
-    - name: Infect cat
+    - name: Infect hostname
       run: /tmp/test/whoami
 
-    - name: Output cat strings
-      run: strings /tmp/test2/cat > cat_strings
+    - name: Output hostname strings
+      run: strings /tmp/test2/hostname > hostname_strings
 
-    - name: Upload cat strings
+    - name: Upload hostname strings
       uses: actions/upload-artifact@v4
       with:
-        name: long_infection_chain_test-cat_strings.txt
-        path: ./cat_strings
+        name: long_infection_chain_test-hostname_strings.txt
+        path: ./hostname_strings
 
-    - name: Test cat strings has signature
-      run: cat cat_strings | grep "${{ env.VIRUS_NAME }}"
+    - name: Test hostname strings has signature
+      run: cat hostname_strings | grep "${{ env.VIRUS_NAME }}"
 
-    - name: Run infected cat
-      run: /tmp/test2/cat <<< Hello > cat_output 
+    - name: Run infected hostname
+      run: /tmp/test2/hostname > hostname_output 
 
-    - name: Upload cat output
+    - name: Upload hostname output
       uses: actions/upload-artifact@v4
       with:
-        name: long_infection_chain_test-cat_output.txt
-        path: ./cat_output
+        name: long_infection_chain_test-hostname_output.txt
+        path: ./hostname_output
 
-    - name: Check infected cat output
-      run: cat <<< Hello > cat_expected && diff cat_output cat_expected
+    - name: Check infected hostname output
+      run: hostname > hostname_expected && diff hostname_output hostname_expected
 
   process_test:
     name: Test infection does not affect if cat is running
@@ -645,7 +645,7 @@ jobs:
         name: remove_anti_debug.py
 
     - name: Prepare test
-      run: mkdir -p /tmp/test && cp /bin/ls /tmp/test/ls
+      run: mkdir -p /tmp/test && mkdir -p /tmp/test2 && cp /bin/ls /tmp/test/ls
 
     - name: Infect ls
       run: ./${{ env.VIRUS_NAME }}
