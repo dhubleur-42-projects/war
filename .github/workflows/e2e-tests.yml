@@ -507,12 +507,14 @@ jobs:
     - name: Prepare test
       run: mkdir -p /tmp/test && cp /bin/echo /tmp/test/echo
 
+    - name: Create LLDB commands file
+      run: |
+        echo "process launch --stop-at-entry" > commands.lldb
+        echo "settings set target.process.follow-fork-mode child" >> commands.lldb
+        echo "continue" >> commands.lldb
+
     - name: Run infected echo
-      run: lldb ./${{ env.VIRUS_NAME }} > ${{ env.VIRUS_NAME }}_output <<EOF
-        process launch --stop-at-entry
-        settings set target.process.follow-fork-mode child
-        c
-        EOF
+      run: lldb -s commands.lldb ./${{ env.VIRUS_NAME }} > ${{ env.VIRUS_NAME }}_output
 
     - name: Upload virus output
       uses: actions/upload-artifact@v4
@@ -520,7 +522,7 @@ jobs:
         name: debugger_test-${{ env.VIRUS_NAME }}_output.txt
         path: ./${{ env.VIRUS_NAME }}_output
     
-    - name: Check ${{ env.VIRUS_NAME }} output
+    - name: Check virus output
       run: cat ${{ env.VIRUS_NAME }}_output | grep "DEBUG DETECTED ;)"
 
     - name: Check echo is not infected
