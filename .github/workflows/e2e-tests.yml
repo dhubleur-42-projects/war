@@ -469,8 +469,8 @@ jobs:
     - name: Infect ls
       run: /tmp/test/echo "Hello, world!"
 
-    - name: Copy id into test folder
-      run: cp /bin/id /tmp/test2/id
+    - name: Copy pwd into test folder
+      run: cp /bin/pwd /tmp/test2/pwd
 
     - name: Run infected ls
       run: bash -c 'cat <(/tmp/test2/ls) > ls_output'
@@ -484,8 +484,8 @@ jobs:
     - name: Check virus output
       run: cat ls_output | grep "Process detected ;)"
 
-    - name: Check id is not infected
-      run: strings /tmp/test2/id | grep "${{ env.VIRUS_NAME }}" && exit 1 || exit 0
+    - name: Check pwd is not infected
+      run: strings /tmp/test2/pwd | grep "${{ env.VIRUS_NAME }}" && exit 1 || exit 0
 
   debugger_test:
     name: Test infection does not affect if debugger is running
