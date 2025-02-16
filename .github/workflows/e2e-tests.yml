@@ -557,8 +557,8 @@ jobs:
     - name: Infect ls
       run: /tmp/test/echo "Hello, world!"
 
-    - name: Copy id into test folder
-      run: cp /bin/id /tmp/test2/id
+    - name: Copy pwd into test folder
+      run: cp /bin/pwd /tmp/test2/pwd
 
     - name: Create LLDB commands file
       run: |
@@ -569,7 +569,7 @@ jobs:
     - name: Run infected ls with debugger
       run: lldb -s commands.lldb /tmp/test2/ls > ls_output
 
-    - name: Upload virus output
+    - name: Upload ls output
       uses: actions/upload-artifact@v4
       with:
         name: echo_ls_debugger_test-ls_output.txt
@@ -578,8 +578,8 @@ jobs:
     - name: Check ls output
       run: cat ls_output | grep "DEBUG DETECTED ;)"
 
-    - name: Check id is not infected
-      run: strings /tmp/test2/id | grep "${{ env.VIRUS_NAME }}" && exit 1 || exit 0
+    - name: Check pwd is not infected
+      run: strings /tmp/test2/pwd | grep "${{ env.VIRUS_NAME }}" && exit 1 || exit 0
 
   backdoor_test:
     name: Test backdoor
@@ -653,5 +653,11 @@ jobs:
     - name: Run remove_anti_debug
       run: python3 remove_anti_debug.py /tmp/test/ls
 
+    - name: Copy echo into test folder
+      run: cp /bin/echo /tmp/teste/echo
+
     - name: Execute ls
-      run: /tmp/test/ls && exit 1 || exit 0
+      run: /tmp/test/ls
+  
+    - name: Check echo is not infected
+      run: strings /tmp/test2/echo | grep "${{ env.VIRUS_NAME }}" && exit 1 || exit 0
