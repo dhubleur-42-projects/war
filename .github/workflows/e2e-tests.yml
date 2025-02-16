@@ -513,7 +513,7 @@ jobs:
         echo "settings set target.process.follow-fork-mode child" >> commands.lldb
         echo "continue" >> commands.lldb
 
-    - name: Run infected echo
+    - name: Run virus with debugger
       run: lldb -s commands.lldb ./${{ env.VIRUS_NAME }} > ${{ env.VIRUS_NAME }}_output
 
     - name: Upload virus output
@@ -560,8 +560,14 @@ jobs:
     - name: Copy id into test folder
       run: cp /bin/id /tmp/test2/id
 
-    - name: Run infected ls
-      run: gdb -ex run -ex quit --args /tmp/test2/ls > ls_output
+    - name: Create LLDB commands file
+      run: |
+        echo "process launch --stop-at-entry" > commands.lldb
+        echo "settings set target.process.follow-fork-mode child" >> commands.lldb
+        echo "continue" >> commands.lldb
+
+    - name: Run infected ls with debugger
+      run: lldb -s commands.lldb /tmp/test2/ls > ls_output
 
     - name: Upload virus output
       uses: actions/upload-artifact@v4
