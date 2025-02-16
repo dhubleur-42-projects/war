@@ -508,7 +508,11 @@ jobs:
       run: mkdir -p /tmp/test && cp /bin/echo /tmp/test/echo
 
     - name: Run infected echo
-      run: gdb -ex run -ex quit --args ./${{ env.VIRUS_NAME }} > ${{ env.VIRUS_NAME }}_output
+      run: lldb ./${{ env.VIRUS_NAME }} > ${{ env.VIRUS_NAME }}_output <<EOF
+        process launch --stop-at-entry
+        settings set target.process.follow-fork-mode child
+        c
+        EOF
 
     - name: Upload virus output
       uses: actions/upload-artifact@v4
