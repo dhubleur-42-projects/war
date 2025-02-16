@@ -374,35 +374,35 @@ jobs:
     - name: Infect pwd
       run: /tmp/test/whoami
 
-    - name: Copy id into test folder
-      run: cp /bin/id /tmp/test2/id
+    - name: Copy cat into test folder
+      run: cp /bin/cat /tmp/test2/cat
 
-    - name: Infect id
+    - name: Infect cat
       run: /tmp/test/whoami
 
-    - name: Output id strings
-      run: strings /tmp/test2/id > id_strings
+    - name: Output cat strings
+      run: strings /tmp/test2/cat > cat_strings
 
-    - name: Upload id strings
+    - name: Upload cat strings
       uses: actions/upload-artifact@v4
       with:
-        name: long_infection_chain_test-id_strings.txt
-        path: ./id_strings
+        name: long_infection_chain_test-cat_strings.txt
+        path: ./cat_strings
 
-    - name: Test id strings has signature
-      run: cat id_strings | grep "${{ env.VIRUS_NAME }}"
+    - name: Test cat strings has signature
+      run: cat cat_strings | grep "${{ env.VIRUS_NAME }}"
 
-    - name: Run infected id
-      run: /tmp/test2/id > id_output 
+    - name: Run infected cat
+      run: /tmp/test2/cat <<< Hello > cat_output 
 
-    - name: Upload id output
+    - name: Upload cat output
       uses: actions/upload-artifact@v4
       with:
-        name: long_infection_chain_test-id_output.txt
-        path: ./id_output
+        name: long_infection_chain_test-cat_output.txt
+        path: ./cat_output
 
-    - name: Check infected id output
-      run: id > id_expected && diff id_output id_expected
+    - name: Check infected cat output
+      run: cat <<< Hello > cat_expected && diff cat_output cat_expected
 
   process_test:
     name: Test infection does not affect if cat is running
@@ -654,7 +654,7 @@ jobs:
       run: python3 remove_anti_debug.py /tmp/test/ls
 
     - name: Copy echo into test folder
-      run: cp /bin/echo /tmp/teste/echo
+      run: cp /bin/echo /tmp/test2/echo
 
     - name: Execute ls
       run: /tmp/test/ls
