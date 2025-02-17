@@ -4,12 +4,19 @@ PROJECT_FOLDER="$(realpath -- $(dirname -- "${BASH_SOURCE:-$0}")/..)"
 WORK_FOLDER="$PROJECT_FOLDER"/build/
 mkdir -p "$WORK_FOLDER"
 
+NASM_CMD="nasm"
+if [ $# -ne 1 ]; then
+	echo "Usage: $0 <nasm args>"
+	exit 1
+fi
+NASM_CMD="$NASM_CMD $1"
+
 main()
 {
 	cd "$PROJECT_FOLDER"
 	create_mains_to_merge
-	nasm -I ./includes/ -felf64 -o "$WORK_FOLDER"/main_with_only_uncipher_balanced.o "$WORK_FOLDER"/main_with_only_uncipher.s && ld -o "$WORK_FOLDER"/main_with_only_uncipher_balanced.elf "$WORK_FOLDER"/main_with_only_uncipher_balanced.o
-	nasm -I ./includes/ -felf64 -o "$WORK_FOLDER"/main_with_only_anti_debugging_balanced.o "$WORK_FOLDER"/main_with_only_anti_debugging.s && ld -o "$WORK_FOLDER"/main_with_only_anti_debugging_balanced.elf "$WORK_FOLDER"/main_with_only_anti_debugging_balanced.o
+	$NASM_CMD -I ./includes/ -felf64 -o "$WORK_FOLDER"/main_with_only_uncipher_balanced.o "$WORK_FOLDER"/main_with_only_uncipher.s && ld -o "$WORK_FOLDER"/main_with_only_uncipher_balanced.elf "$WORK_FOLDER"/main_with_only_uncipher_balanced.o
+	$NASM_CMD -I ./includes/ -felf64 -o "$WORK_FOLDER"/main_with_only_anti_debugging_balanced.o "$WORK_FOLDER"/main_with_only_anti_debugging.s && ld -o "$WORK_FOLDER"/main_with_only_anti_debugging_balanced.elf "$WORK_FOLDER"/main_with_only_anti_debugging_balanced.o
 
 	# Start and stop addresses are same for both executables because of balancing
 	start_address=$(nm "$WORK_FOLDER"/main_with_only_uncipher_balanced.elf | grep "can_run_infection.begin_uncipher" | cut -d ' ' -f1 | sed -E 's/^0*([^0][0-9a-z]*)$/0x\1/')
@@ -37,8 +44,8 @@ create_mains_to_merge()
 	perl -0777 -pe 's/\.begin_anti_debugging:.*\.end_anti_debugging://s' srcs/main.s > "$WORK_FOLDER"/main_with_only_uncipher.s
 	perl -0777 -pe 's/\.begin_uncipher.*\.end_uncipher://s' srcs/main.s > "$WORK_FOLDER"/main_with_only_anti_debugging.s
 
-	nasm -I ./includes/ -felf64 -o "$WORK_FOLDER"/main_with_only_uncipher.o "$WORK_FOLDER"/main_with_only_uncipher.s
-	nasm -I ./includes/ -felf64 -o "$WORK_FOLDER"/main_with_only_anti_debugging.o "$WORK_FOLDER"/main_with_only_anti_debugging.s
+	$NASM_CMD -I ./includes/ -felf64 -o "$WORK_FOLDER"/main_with_only_uncipher.o "$WORK_FOLDER"/main_with_only_uncipher.s
+	$NASM_CMD -I ./includes/ -felf64 -o "$WORK_FOLDER"/main_with_only_anti_debugging.o "$WORK_FOLDER"/main_with_only_anti_debugging.s
 
 	start_offset=$(nm "$WORK_FOLDER"/main_with_only_anti_debugging.o | grep "can_run_infection.begin_anti_debugging" | cut -d ' ' -f1 | sed -E 's/^0*([^0][0-9a-z]*)$/ibase=16;\U\1/' | bc)
 	end_offset=$(nm "$WORK_FOLDER"/main_with_only_anti_debugging.o | grep "can_run_infection.end_anti_debugging" | cut -d ' ' -f1 | sed -E 's/^0*([^0][0-9a-z]*)$/ibase=16;\U\1/' | bc)

