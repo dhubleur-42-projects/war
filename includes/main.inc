@@ -13,6 +13,7 @@
 %define SYS_DUP2 33
 %define SYS_EXECVE 59
 %define SYS_CLONE 56
+%define SYS_TIME 201
 
 %define CLONE_VFORK 0x4000
 
