@@ -52,7 +52,7 @@ jobs:
     - uses: actions/checkout@v2
 
     - name: Build virus
-      run: make ${{ env.VIRUS_NAME }}
+      run: make re
 
     - name: Upload virus
       uses: actions/upload-artifact@v4
