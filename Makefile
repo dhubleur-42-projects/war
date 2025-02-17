@@ -1,5 +1,5 @@
 NAME		=	War
-TMP_NAME	=	build/War.tmp
+TMP_NAME	=	build/$(NAME).tmp
 
 SRCS		= 	\
 				final_main.s
@@ -64,11 +64,4 @@ fclean	:	clean
 re		:	fclean
 			make ${NAME}
 
-test	:	${NAME}
-	rm -rf /tmp/test
-	rm -rf /tmp/test2
-	mkdir -p /tmp/test
-	cp /bin/echo /tmp/test
-	./${NAME}
-
-.PHONY	:	all clean fclean re test
+.PHONY	:	all clean fclean re debug
